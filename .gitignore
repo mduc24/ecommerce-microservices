@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.pyc
+.Python
+*.egg-info/
+*.egg
+*.py[cod]
+*$py.class
+
+# Poetry/Virtual env
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Docker
+*.log
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+.terraform.lock.hcl
+
+# Database
+*.db
+*.sqlite3
+*.sqlite
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude AI assistant files
+CLAUDE.md
+.claude/
+*.claude.md
+
+# Docker Compose override (optional - decide if commit or not)
+# docker-compose.override.yml
