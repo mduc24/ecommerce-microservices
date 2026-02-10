@@ -63,9 +63,9 @@ ENV PATH="/app/.venv/bin:$PATH"
 # Expose port
 EXPOSE 3000
 
-# Health check using wget
+# Health check using wget (GET request, not HEAD)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
+    CMD wget --no-verbose --tries=1 -O /dev/null http://localhost:3000/health || exit 1
 
 # Run uvicorn as non-root user
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "3000"]
@@ -108,9 +108,9 @@ COPY . .
 # Expose port
 EXPOSE 3000
 
-# Health check using wget
+# Health check using wget (GET request, not HEAD)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
+    CMD wget --no-verbose --tries=1 -O /dev/null http://localhost:3000/health || exit 1
 
 # Run with hot reload for development
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "3000", "--reload"]
