@@ -22,6 +22,7 @@ This platform follows a **microservices architecture** with each service having:
 
 | Service | Status | Port | Database | Description |
 |---------|--------|------|----------|-------------|
+| **API Gateway** | ✅ Complete | 3000 | - | Single entry point, request routing, JWT validation |
 | **User Service** | ✅ Complete | 8003 | users_db | JWT authentication, user management |
 | **Product Service** | 🔄 Planned | 8001 | products_db | Product catalog, inventory |
 | **Order Service** | 🔄 Planned | 8002 | orders_db | Order processing, cart management |
@@ -58,6 +59,17 @@ This platform follows a **microservices architecture** with each service having:
 
 ## ✨ Features
 
+### API Gateway (Current)
+- ✅ Single entry point for all services
+- ✅ Request routing and proxying
+- ✅ JWT token validation
+- ✅ Health check aggregation (parallel)
+- ✅ CORS configuration
+- ✅ Error handling and logging
+- ✅ Dynamic service discovery
+- ✅ Retry logic with exponential backoff
+- ✅ Multi-stage Docker build
+
 ### User Service (Current)
 - ✅ User registration with validation
 - ✅ JWT-based authentication
@@ -74,7 +86,6 @@ This platform follows a **microservices architecture** with each service having:
 - 🔄 Shopping cart functionality
 - 🔄 Order processing
 - 🔄 Email notifications
-- 🔄 API Gateway
 - 🔄 Service mesh
 - 🔄 Kubernetes deployment
 
@@ -109,26 +120,30 @@ docker-compose ps
 ```
 
 You should see:
-- ✅ `postgres` - Running
-- ✅ `user-service` - Running
+- ✅ `postgres` - Running (healthy)
+- ✅ `user-service` - Running (healthy)
+- ✅ `api-gateway` - Running (healthy)
 - ✅ `adminer` - Running
 
 ### 4️⃣ Access services
 
 | Service | URL | Credentials |
 |---------|-----|-------------|
-| **User Service API** | http://localhost:8003 | - |
-| **API Docs (Swagger)** | http://localhost:8003/docs | - |
+| **API Gateway** | http://localhost:3000 | - |
+| **API Docs (Swagger)** | http://localhost:3000/docs | - |
+| **Health Check** | http://localhost:3000/health | - |
+| **User Service (Direct)** | http://localhost:8003 | For development only |
 | **Adminer (DB GUI)** | http://localhost:3636 | Server: `postgres`<br>User: `postgres`<br>Password: `postgres`<br>Database: `users_db` |
-| **Health Check** | http://localhost:8003/health | - |
 
 ---
 
 ## 🧪 Test the API
 
+> **Note:** All requests go through the API Gateway at `localhost:3000`
+
 ### Register a new user
 ```bash
-curl -X POST http://localhost:8003/api/v1/users/register \
+curl -X POST http://localhost:3000/users/register \
   -H "Content-Type: application/json" \
   -d '{
     "email": "user@example.com",
@@ -139,7 +154,7 @@ curl -X POST http://localhost:8003/api/v1/users/register \
 
 ### Login
 ```bash
-curl -X POST http://localhost:8003/api/v1/users/login \
+curl -X POST http://localhost:3000/users/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "user@example.com",
@@ -147,11 +162,39 @@ curl -X POST http://localhost:8003/api/v1/users/login \
   }'
 ```
 
+**Response:**
+```json
+{
+  "access_token": "eyJhbGci...",
+  "token_type": "bearer"
+}
+```
+
 ### Get current user (protected endpoint)
 ```bash
 # Replace YOUR_TOKEN with the token from login response
-curl http://localhost:8003/api/v1/users/me \
+curl http://localhost:3000/users/me \
   -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+### Check system health
+```bash
+curl http://localhost:3000/health
+```
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "timestamp": "2026-02-10T17:36:28.693677Z",
+  "gateway": {"status": "up"},
+  "services": {
+    "user-service": {
+      "status": "up",
+      "response_time_ms": 55.91
+    }
+  }
+}
 ```
 
 ---
@@ -243,19 +286,27 @@ docker-compose exec postgres psql -U postgres -d users_db
 
 ## 🎯 API Documentation
 
-Each service provides interactive API documentation:
+The API Gateway provides centralized API documentation:
 
-- **Swagger UI:** http://localhost:8003/docs
-- **ReDoc:** http://localhost:8003/redoc
+- **Swagger UI:** http://localhost:3000/docs
+- **ReDoc:** http://localhost:3000/redoc
 
-### User Service Endpoints
+### API Gateway Endpoints
 
 | Method | Endpoint | Description | Auth Required |
 |--------|----------|-------------|---------------|
-| `POST` | `/api/v1/users/register` | Register new user | ❌ |
-| `POST` | `/api/v1/users/login` | Login and get JWT token | ❌ |
-| `GET` | `/api/v1/users/me` | Get current user info | ✅ |
-| `GET` | `/health` | Health check | ❌ |
+| `GET` | `/` | Gateway information | ❌ |
+| `GET` | `/health` | Aggregated health check | ❌ |
+| `POST` | `/users/register` | Register new user | ❌ |
+| `POST` | `/users/login` | Login and get JWT token | ❌ |
+| `GET` | `/users/me` | Get current user info | ✅ |
+
+### Direct Service Access (Development)
+
+For development and debugging, services are also accessible directly:
+
+- **User Service:** http://localhost:8003/api/v1/users/...
+- **User Service Docs:** http://localhost:8003/docs
 
 ---
 
@@ -347,10 +398,13 @@ Contributions are welcome! Please follow these steps:
 - [x] Docker Compose setup
 - [x] Database migrations (Alembic)
 - [x] API documentation
+- [x] **API Gateway (FastAPI)** ✨ NEW!
+- [x] Health check aggregation
+- [x] Request routing and proxying
+- [x] JWT validation middleware
 - [ ] Product Service
 - [ ] Order Service
 - [ ] Notification Service
-- [ ] API Gateway (Kong/Nginx)
 - [ ] Service mesh (Istio)
 - [ ] Kubernetes deployment
 - [ ] CI/CD pipeline (GitHub Actions)
