@@ -55,6 +55,32 @@ services:
       retries: 3
       start_period: 40s
 
+  product-service:
+    build:
+      context: ./services/product-service
+      dockerfile: Dockerfile
+      target: development
+    container_name: product-service
+    env_file:
+      - ./services/product-service/.env
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+    volumes:
+      - ./services/product-service:/app
+      - product-service-deps:/root/.cache/pypoetry
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "-O", "/dev/null", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
   api-gateway:
     build:
       context: ./api-gateway
@@ -84,6 +110,7 @@ services:
 volumes:
   postgres-data:
   user-service-deps:
+  product-service-deps:
   api-gateway-deps:
 
 networks:
