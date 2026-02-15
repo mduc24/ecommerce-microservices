@@ -17,6 +17,12 @@ from app.services import create_order, get_order_by_id, get_user_orders, update_
 router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
 
 
+@router.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {"status": "healthy"}
+
+
 @router.post(
     "",
     response_model=OrderResponse,
@@ -78,9 +84,3 @@ async def update_order_status_endpoint(
     """Update order status."""
     order = await update_order_status(db, order_id, request.status)
     return order
-
-
-@router.get("/health")
-async def health_check():
-    """Health check endpoint."""
-    return {"status": "healthy"}
