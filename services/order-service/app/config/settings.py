@@ -23,6 +23,13 @@ class Settings(BaseSettings):
     product_service_url: str  # http://product-service:8001
     product_service_timeout: int = 5
 
+    # RabbitMQ
+    rabbitmq_host: str = "rabbitmq"
+    rabbitmq_port: int = 5672
+    rabbitmq_user: str = "admin"
+    rabbitmq_pass: str = "admin123"
+    rabbitmq_exchange: str = "ecommerce_events"
+
     # Server
     host: str = "0.0.0.0"
     port: int = 8002
