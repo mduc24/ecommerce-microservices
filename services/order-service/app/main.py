@@ -11,6 +11,7 @@ from sqlalchemy import text
 
 from app.config.settings import settings
 from app.database import engine
+from app.events.publisher import event_publisher
 from app.routes import router
 
 logger = logging.getLogger(__name__)
@@ -26,8 +27,12 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Database connection failed on startup: {e}")
 
+    await event_publisher.connect()
+    app.state.event_publisher = event_publisher
+
     yield
 
+    await event_publisher.close()
     await engine.dispose()
     logger.info("Database connections closed")
 

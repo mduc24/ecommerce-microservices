@@ -16,6 +16,8 @@ from app.clients.product_client import (
     ProductServiceUnavailableError,
     ProductServiceTimeoutError,
 )
+from app.events.publisher import event_publisher
+from app.events.schemas import OrderCreatedEvent, OrderStatusUpdatedEvent
 from app.models import Order, OrderItem
 from app.schemas import CreateOrderRequest, OrderStatus
 
@@ -105,6 +107,13 @@ async def create_order(
         db.add(order)
         await db.commit()
         await db.refresh(order)
+
+        # Publish OrderCreated event (don't fail if publishing fails)
+        try:
+            event = OrderCreatedEvent.from_order(order)
+            await event_publisher.publish(event, "order.created")
+        except Exception as e:
+            logger.error(f"Failed to publish OrderCreated event: {e}")
 
         return order
 
@@ -208,8 +217,20 @@ async def update_order_status(
             detail=f"Cannot update order in {order.status} status",
         )
 
+    old_status = order.status
     order.status = new_status.value
     await db.commit()
     await db.refresh(order)
+
+    # Publish OrderStatusUpdated event (don't fail if publishing fails)
+    try:
+        event = OrderStatusUpdatedEvent.from_status_change(
+            order_id=order.id,
+            old_status=old_status,
+            new_status=new_status.value,
+        )
+        await event_publisher.publish(event, "order.status.updated")
+    except Exception as e:
+        logger.error(f"Failed to publish OrderStatusUpdated event: {e}")
 
     return order

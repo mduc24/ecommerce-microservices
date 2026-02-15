@@ -24,8 +24,9 @@ This platform follows a **microservices architecture** with each service having:
 |---------|--------|------|----------|-------------|
 | **API Gateway** | ✅ Complete | 3000 | - | Single entry point, request routing, JWT validation |
 | **User Service** | ✅ Complete | 8003 | users_db | JWT authentication, user management |
-| **Product Service** | 🔄 Planned | 8001 | products_db | Product catalog, inventory |
-| **Order Service** | 🔄 Planned | 8002 | orders_db | Order processing, cart management |
+| **Product Service** | ✅ Complete | 8001 | products_db | Product catalog, inventory |
+| **Order Service** | ✅ Complete | 8002 | orders_db | Order processing, event publishing |
+| **RabbitMQ** | ✅ Complete | 5672/15672 | - | Message broker for async events |
 | **Notification Service** | 🔄 Planned | 8004 | notifications_db | Email/SMS notifications |
 
 ---
@@ -81,10 +82,16 @@ This platform follows a **microservices architecture** with each service having:
 - ✅ Comprehensive error handling
 - ✅ API documentation (FastAPI auto-docs)
 
+### Event-Driven Architecture
+- ✅ RabbitMQ message broker
+- ✅ `order.created` event on new orders
+- ✅ `order.status.updated` event on status changes
+- ✅ Graceful degradation (service works without RabbitMQ)
+- ✅ Auto-reconnect on broker restart
+
+See [Order Service Events](services/order-service/EVENTS.md) for details.
+
 ### Coming Soon
-- 🔄 Product catalog management
-- 🔄 Shopping cart functionality
-- 🔄 Order processing
 - 🔄 Email notifications
 - 🔄 Service mesh
 - 🔄 Kubernetes deployment
@@ -402,8 +409,9 @@ Contributions are welcome! Please follow these steps:
 - [x] Health check aggregation
 - [x] Request routing and proxying
 - [x] JWT validation middleware
-- [ ] Product Service
-- [ ] Order Service
+- [x] Product Service
+- [x] Order Service with event publishing
+- [x] RabbitMQ event-driven messaging
 - [ ] Notification Service
 - [ ] Service mesh (Istio)
 - [ ] Kubernetes deployment
