@@ -4,6 +4,7 @@ Notification Service - FastAPI application.
 Consumes order events from RabbitMQ and sends email notifications via SMTP.
 """
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -12,6 +13,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config.settings import settings
 from app.database import engine, Base
+from app.events.consumer import event_consumer
+from app.routes import router
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +30,14 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     logger.info("Database tables ready")
 
+    # Start RabbitMQ consumer as background task
+    consumer_task = asyncio.create_task(event_consumer.start())
+
     yield
 
     # Shutdown
+    await event_consumer.stop()
+    consumer_task.cancel()
     await engine.dispose()
     logger.info("%s stopped", settings.app_name)
 
@@ -48,6 +56,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+app.include_router(router)
 
 
 @app.get("/health")

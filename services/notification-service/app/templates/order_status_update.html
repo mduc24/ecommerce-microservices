@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0; padding:0; background-color:#f4f4f4; font-family:Arial, Helvetica, sans-serif;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f4; padding:20px 0;">
+        <tr>
+            <td align="center">
+                <table width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff; border-radius:8px; overflow:hidden;">
+                    <!-- Header -->
+                    <tr>
+                        <td style="background-color:#7c3aed; padding:30px; text-align:center;">
+                            <h1 style="color:#ffffff; margin:0; font-size:24px;">Order Status Updated</h1>
+                        </td>
+                    </tr>
+
+                    <!-- Body -->
+                    <tr>
+                        <td style="padding:30px;">
+                            <p style="color:#333333; font-size:16px; margin:0 0 20px;">
+                                Hi <strong>{{ user_email }}</strong>,
+                            </p>
+                            <p style="color:#333333; font-size:16px; margin:0 0 20px;">
+                                Your order <strong>#{{ order_id }}</strong> has been updated.
+                            </p>
+
+                            <!-- Status Change -->
+                            <table width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0;">
+                                <tr>
+                                    <td style="text-align:center; padding:20px; background-color:#f8fafc; border-radius:8px;">
+                                        <span style="color:#94a3b8; font-size:14px; text-transform:uppercase;">{{ old_status }}</span>
+                                        <span style="color:#333333; font-size:20px; margin:0 12px;">&rarr;</span>
+                                        <span style="color:#2563eb; font-size:16px; font-weight:bold; text-transform:uppercase;">{{ new_status }}</span>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            {% if new_status == "confirmed" %}
+                            <p style="color:#333333; font-size:14px; margin:20px 0 0;">Your order has been confirmed and is being prepared.</p>
+                            {% elif new_status == "shipped" %}
+                            <p style="color:#333333; font-size:14px; margin:20px 0 0;">Your order is on the way!</p>
+                            {% elif new_status == "delivered" %}
+                            <p style="color:#333333; font-size:14px; margin:20px 0 0;">Your order has been delivered. Enjoy!</p>
+                            {% elif new_status == "cancelled" %}
+                            <p style="color:#333333; font-size:14px; margin:20px 0 0;">Your order has been cancelled. If you have questions, please contact support.</p>
+                            {% endif %}
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background-color:#f8fafc; padding:20px 30px; text-align:center; border-top:1px solid #e2e8f0;">
+                            <p style="color:#94a3b8; font-size:12px; margin:0;">E-Commerce Platform</p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
