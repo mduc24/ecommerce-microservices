@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config.settings import settings
-from app.routes import health, users, products, orders
+from app.routes import health, users, products, orders, notifications
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -59,6 +59,9 @@ app.include_router(products.router)
 
 # Orders router (prefix="/orders")
 app.include_router(orders.router)
+
+# Notifications router (prefix="/notifications")
+app.include_router(notifications.router)
 
 # ==================== Startup Event ====================
 
