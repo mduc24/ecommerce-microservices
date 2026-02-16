@@ -228,6 +228,7 @@ async def update_order_status(
             order_id=order.id,
             old_status=old_status,
             new_status=new_status.value,
+            user_id=order.user_id,
         )
         await event_publisher.publish(event, "order.status.updated")
     except Exception as e:

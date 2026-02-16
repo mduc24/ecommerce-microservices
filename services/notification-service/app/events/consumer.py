@@ -6,7 +6,6 @@ import json
 import logging
 
 import aio_pika
-from sqlalchemy import select
 
 from app.config.settings import settings
 from app.database import AsyncSessionLocal
@@ -83,7 +82,7 @@ class OrderEventConsumer:
         """Handle order.created event: send confirmation email."""
         order_id = data["order_id"]
         user_id = data["user_id"]
-        user_email = f"user_{user_id}@example.com"
+        user_email = data.get("user_email", f"user_{user_id}@example.com")
 
         subject = f"Order #{order_id} Confirmed"
         template_context = {
@@ -133,18 +132,8 @@ class OrderEventConsumer:
         old_status = data["old_status"]
         new_status = data["new_status"]
 
-        # Look up user_id from last notification for this order
-        async with AsyncSessionLocal() as db:
-            result = await db.execute(
-                select(Notification.user_id)
-                .where(Notification.order_id == order_id)
-                .order_by(Notification.id.desc())
-                .limit(1)
-            )
-            row = result.scalar_one_or_none()
-            user_id = row if row else 0
-
-        user_email = f"user_{user_id}@example.com"
+        user_id = data.get("user_id", 0)
+        user_email = data.get("user_email", f"user_{user_id}@example.com")
         subject = f"Order #{order_id} Status: {new_status.title()}"
         template_context = {
             "user_email": user_email,
