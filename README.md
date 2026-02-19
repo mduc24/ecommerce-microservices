@@ -17,7 +17,7 @@ A scalable e-commerce platform built with microservices architecture, featuring 
                     ┌─────────────┐
                     │   Frontend   │
                     │  Vue 3 SPA  │
-                    │   :5173     │
+                    │  nginx :8080 │
                     └──────┬──────┘
                            │
                     ┌──────▼──────┐
@@ -53,7 +53,7 @@ A scalable e-commerce platform built with microservices architecture, featuring 
 
 | Service | Status | Port | Database | Description |
 |---------|--------|------|----------|-------------|
-| **Frontend** | ✅ Complete | 5173 | - | Vue 3 SPA storefront |
+| **Frontend** | ✅ Complete | 8080 | - | Vue 3 SPA (nginx, Dockerized) |
 | **API Gateway** | ✅ Complete | 3000 | - | Request routing, JWT validation, WebSocket proxy |
 | **User Service** | ✅ Complete | 8003 | users_db | JWT authentication, user management |
 | **Product Service** | ✅ Complete | 8001 | products_db | Product catalog, inventory, CRUD |
@@ -169,23 +169,13 @@ cd ecommerce-microservices
 docker-compose up -d
 ```
 
-### 2. Start the frontend
+That's it — all services including the frontend start together.
 
-```bash
-docker run --rm -d --name frontend-dev \
-  --network ecommerce-microservices_ecommerce-network \
-  -v $(pwd)/frontend:/app -w /app \
-  -p 5173:5173 \
-  -e API_URL=http://api-gateway:3000 \
-  -e WS_URL=ws://api-gateway:3000 \
-  node:20-alpine sh -c "npm install && npx vite --host 0.0.0.0"
-```
-
-### 3. Access services
+### 2. Access services
 
 | Service | URL |
 |---------|-----|
-| **Frontend** | http://localhost:5173 |
+| **Frontend** | http://localhost:8080 |
 | **API Gateway** | http://localhost:3000 |
 | **API Docs (Swagger)** | http://localhost:3000/docs |
 | **Health Check** | http://localhost:3000/health |
@@ -260,6 +250,8 @@ ecommerce-microservices/
 │   │   ├── router/                    # Vue Router
 │   │   ├── App.vue
 │   │   └── main.js
+│   ├── Dockerfile                     # Multi-stage build (node → nginx)
+│   ├── nginx.conf                     # SPA fallback + /api proxy + /ws proxy
 │   ├── vite.config.js
 │   └── package.json
 ├── api-gateway/                       # FastAPI gateway
@@ -322,7 +314,7 @@ docker-compose exec user-service poetry run pytest
 
 ## E2E Flow
 
-1. Browse products at http://localhost:5173
+1. Browse products at http://localhost:8080
 2. Add items to cart
 3. Place order (checkout)
 4. Order Service validates stock via Product Service
@@ -344,6 +336,7 @@ docker-compose exec user-service poetry run pytest
 - [x] Notification Service (email + DB tracking + retry)
 - [x] WebSocket real-time notifications
 - [x] Vue 3 frontend storefront
+- [x] Frontend Dockerized (nginx, multi-stage build)
 - [ ] Inventory decrement on order creation
 - [ ] Unit tests (pytest-asyncio, vitest)
 - [ ] Service mesh (Istio)
