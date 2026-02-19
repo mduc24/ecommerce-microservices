@@ -21,6 +21,7 @@ class OrderCreatedData(BaseModel):
 
     order_id: int
     user_id: int
+    user_email: str
     total_amount: float
     items: list[OrderItemData]
     status: str
@@ -43,6 +44,7 @@ class OrderCreatedEvent(BaseModel):
             data=OrderCreatedData(
                 order_id=order.id,
                 user_id=order.user_id,
+                user_email=f"user_{order.user_id}@example.com",
                 total_amount=float(order.total_amount),
                 items=[
                     OrderItemData(
@@ -62,6 +64,8 @@ class OrderStatusUpdatedData(BaseModel):
     """Data payload for order.status.updated event."""
 
     order_id: int
+    user_id: int
+    user_email: str
     old_status: str
     new_status: str
     updated_by: str
@@ -78,13 +82,15 @@ class OrderStatusUpdatedEvent(BaseModel):
 
     @classmethod
     def from_status_change(
-        cls, order_id: int, old_status: str, new_status: str, updated_by: str = "system"
+        cls, order_id: int, old_status: str, new_status: str, user_id: int = 0, updated_by: str = "system"
     ) -> "OrderStatusUpdatedEvent":
         """Build event from status change parameters."""
         return cls(
             timestamp=datetime.utcnow().isoformat() + "Z",
             data=OrderStatusUpdatedData(
                 order_id=order_id,
+                user_id=user_id,
+                user_email=f"user_{user_id}@example.com",
                 old_status=old_status,
                 new_status=new_status,
                 updated_by=updated_by,
