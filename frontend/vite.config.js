@@ -2,33 +2,21 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
 
+const apiTarget = process.env.API_URL || 'http://localhost:3000'
+const wsTarget = process.env.WS_URL || 'ws://localhost:3000'
+
 export default defineConfig({
   plugins: [vue(), tailwindcss()],
   server: {
     port: 5173,
     proxy: {
-      '/products': {
-        target: 'http://localhost:3000',
+      '/api': {
+        target: apiTarget,
         changeOrigin: true,
-      },
-      '/orders': {
-        target: 'http://localhost:3000',
-        changeOrigin: true,
-      },
-      '/users': {
-        target: 'http://localhost:3000',
-        changeOrigin: true,
-      },
-      '/notifications': {
-        target: 'http://localhost:3000',
-        changeOrigin: true,
-      },
-      '/health': {
-        target: 'http://localhost:3000',
-        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
       },
       '/ws': {
-        target: 'ws://localhost:3000',
+        target: wsTarget,
         ws: true,
       },
     },
