@@ -4,10 +4,12 @@ RabbitMQ consumer for order events.
 
 import json
 import logging
+from datetime import datetime
 
 import aio_pika
 
 from app.config.settings import settings
+from app.websocket.manager import manager
 from app.database import AsyncSessionLocal
 from app.models import Notification
 from app.services.email_service import send_email
@@ -121,6 +123,17 @@ class OrderEventConsumer:
             notification.error_message = result.get("error_message")
             await db.commit()
 
+        if result["status"] == "sent":
+            await manager.broadcast({
+                "type": "notification",
+                "data": {
+                    "event_type": "order_confirmation",
+                    "subject": subject,
+                    "message": f"Order #{order_id} confirmed",
+                    "timestamp": datetime.utcnow().isoformat(),
+                },
+            })
+
         logger.info(
             "Order confirmation %s for order #%s to %s",
             result["status"], order_id, user_email,
@@ -166,6 +179,17 @@ class OrderEventConsumer:
             notification.status = result["status"]
             notification.error_message = result.get("error_message")
             await db.commit()
+
+        if result["status"] == "sent":
+            await manager.broadcast({
+                "type": "notification",
+                "data": {
+                    "event_type": "order_status_update",
+                    "subject": subject,
+                    "message": f"Order #{order_id}: {old_status} → {new_status}",
+                    "timestamp": datetime.utcnow().isoformat(),
+                },
+            })
 
         logger.info(
             "Status update %s for order #%s (%s -> %s) to %s",
