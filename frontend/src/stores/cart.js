@@ -1,10 +1,33 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
+
+const STORAGE_KEY = 'ecommerce_cart'
+
+function loadCart() {
+  try {
+    const data = localStorage.getItem(STORAGE_KEY)
+    return data ? JSON.parse(data) : []
+  } catch {
+    return []
+  }
+}
+
+function saveCart(items) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(items))
+  } catch {
+    // localStorage full or unavailable
+  }
+}
 
 export const useCartStore = defineStore('cart', () => {
-  const items = ref([])
+  const items = ref(loadCart())
 
-  const totalItems = computed(() =>
+  // Persist on every change
+  watch(items, (val) => saveCart(val), { deep: true })
+
+  // Getters
+  const itemCount = computed(() =>
     items.value.reduce((sum, item) => sum + item.quantity, 0)
   )
 
@@ -12,16 +35,25 @@ export const useCartStore = defineStore('cart', () => {
     items.value.reduce((sum, item) => sum + item.price * item.quantity, 0)
   )
 
+  const isEmpty = computed(() => items.value.length === 0)
+
+  // Helper
+  function findItem(productId) {
+    return items.value.find((item) => item.product_id === productId)
+  }
+
+  // Actions
   function addItem(product, quantity = 1) {
-    const existing = items.value.find((item) => item.product_id === product.id)
+    const existing = findItem(product.product_id ?? product.id)
     if (existing) {
       existing.quantity += quantity
     } else {
       items.value.push({
-        product_id: product.id,
+        product_id: product.product_id ?? product.id,
         name: product.name,
         price: Number(product.price),
         quantity,
+        image: product.image || null,
       })
     }
   }
@@ -31,9 +63,13 @@ export const useCartStore = defineStore('cart', () => {
   }
 
   function updateQuantity(productId, quantity) {
-    const item = items.value.find((item) => item.product_id === productId)
+    if (quantity <= 0) {
+      removeItem(productId)
+      return
+    }
+    const item = findItem(productId)
     if (item) {
-      item.quantity = Math.max(1, quantity)
+      item.quantity = quantity
     }
   }
 
@@ -41,5 +77,5 @@ export const useCartStore = defineStore('cart', () => {
     items.value = []
   }
 
-  return { items, totalItems, totalPrice, addItem, removeItem, updateQuantity, clearCart }
+  return { items, itemCount, totalPrice, isEmpty, addItem, removeItem, updateQuantity, clearCart }
 })
