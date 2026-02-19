@@ -11,7 +11,7 @@
     <div v-else-if="error" class="text-center py-20">
       <p class="text-red-500 text-lg">{{ error }}</p>
       <button
-        @click="$router.go(0)"
+        @click="fetchOrders"
         class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer"
       >
         Retry
@@ -96,6 +96,9 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { getOrders } from '../services/api'
+import { useNotifications } from '../composables/useNotifications'
+
+const { addNotification } = useNotifications()
 
 const orders = ref([])
 const loading = ref(true)
@@ -110,16 +113,21 @@ const statusColors = {
   cancelled: 'bg-red-100 text-red-800',
 }
 
-onMounted(async () => {
+async function fetchOrders() {
+  loading.value = true
+  error.value = null
   try {
     const { data } = await getOrders()
     orders.value = data.orders || data
   } catch (err) {
-    error.value = err.response?.data?.detail || 'Failed to load orders'
+    error.value = err.message || 'Failed to load orders'
+    addNotification({ type: 'error', title: 'Error', message: error.value })
   } finally {
     loading.value = false
   }
-})
+}
+
+onMounted(fetchOrders)
 
 function toggleDetails(orderId) {
   if (expandedOrders.value.has(orderId)) {

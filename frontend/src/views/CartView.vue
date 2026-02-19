@@ -111,10 +111,12 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCartStore } from '../stores/cart'
+import { useNotifications } from '../composables/useNotifications'
 import { createOrder } from '../services/api'
 
 const router = useRouter()
 const cart = useCartStore()
+const { addNotification } = useNotifications()
 
 const loading = ref(false)
 const error = ref(null)
@@ -137,7 +139,8 @@ async function checkout() {
 
     setTimeout(() => router.push('/orders'), 2000)
   } catch (err) {
-    error.value = err.response?.data?.detail || 'Failed to place order. Please try again.'
+    error.value = err.message || 'Failed to place order. Please try again.'
+    addNotification({ type: 'error', title: 'Checkout Failed', message: error.value })
   } finally {
     loading.value = false
   }

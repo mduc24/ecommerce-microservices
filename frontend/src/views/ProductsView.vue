@@ -11,7 +11,7 @@
     <div v-else-if="error" class="text-center py-20">
       <p class="text-red-500 text-lg">{{ error }}</p>
       <button
-        @click="$router.go(0)"
+        @click="fetchProducts"
         class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer"
       >
         Retry
@@ -37,20 +37,28 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { getProducts } from '../services/api'
+import { useNotifications } from '../composables/useNotifications'
 import ProductCard from '../components/ProductCard.vue'
+
+const { addNotification } = useNotifications()
 
 const products = ref([])
 const loading = ref(true)
 const error = ref(null)
 
-onMounted(async () => {
+async function fetchProducts() {
+  loading.value = true
+  error.value = null
   try {
     const { data } = await getProducts()
     products.value = data.items || data
   } catch (err) {
-    error.value = err.response?.data?.detail || 'Failed to load products'
+    error.value = err.message || 'Failed to load products'
+    addNotification({ type: 'error', title: 'Error', message: error.value })
   } finally {
     loading.value = false
   }
-})
+}
+
+onMounted(fetchProducts)
 </script>

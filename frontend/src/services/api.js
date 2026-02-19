@@ -17,12 +17,21 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Response interceptor: handle errors
+// Response interceptor: handle errors with clear messages
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    if (!error.response) {
+      error.message = 'Network error. Check your connection.'
+    } else if (error.code === 'ECONNABORTED') {
+      error.message = 'Request timeout. Please try again.'
+    } else if (error.response.status === 401) {
       localStorage.removeItem('token')
+      error.message = 'Unauthorized. Please log in.'
+    } else if (error.response.status === 404) {
+      error.message = 'Not found.'
+    } else if (error.response.status >= 500) {
+      error.message = 'Server error. Please try again later.'
     }
     return Promise.reject(error)
   }

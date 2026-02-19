@@ -32,7 +32,7 @@
     <div v-else-if="error" class="text-center py-20">
       <p class="text-red-500 text-lg">{{ error }}</p>
       <button
-        @click="$router.go(0)"
+        @click="fetchProduct"
         class="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer"
       >
         Retry
@@ -116,10 +116,12 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getProduct } from '../services/api'
 import { useCartStore } from '../stores/cart'
+import { useNotifications } from '../composables/useNotifications'
 
 const route = useRoute()
 const router = useRouter()
 const cart = useCartStore()
+const { addNotification } = useNotifications()
 
 const product = ref(null)
 const loading = ref(true)
@@ -127,16 +129,26 @@ const error = ref(null)
 const quantity = ref(1)
 const showToast = ref(false)
 
-onMounted(async () => {
+async function fetchProduct() {
+  loading.value = true
+  error.value = null
   try {
     const { data } = await getProduct(route.params.id)
     product.value = data
   } catch (err) {
-    error.value = err.response?.status === 404 ? 404 : 'Failed to load product'
+    if (err.response?.status === 404) {
+      error.value = 404
+      addNotification({ type: 'error', title: 'Not Found', message: 'Product not found' })
+    } else {
+      error.value = err.message || 'Failed to load product'
+      addNotification({ type: 'error', title: 'Error', message: error.value })
+    }
   } finally {
     loading.value = false
   }
-})
+}
+
+onMounted(fetchProduct)
 
 function addToCart() {
   if (!product.value) return

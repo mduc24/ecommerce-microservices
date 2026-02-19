@@ -2,6 +2,8 @@ let ws = null
 let reconnectTimer = null
 let pingTimer = null
 let messageCallback = null
+let reconnectAttempts = 0
+const MAX_RECONNECT_ATTEMPTS = 5
 
 function startPing() {
   stopPing()
@@ -21,6 +23,12 @@ function stopPing() {
 
 function scheduleReconnect() {
   if (reconnectTimer) return
+  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    console.warn('[WS] Max reconnect attempts reached. Giving up.')
+    return
+  }
+  reconnectAttempts++
+  console.log(`[WS] Reconnecting (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`)
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null
     if (messageCallback) {
@@ -40,6 +48,7 @@ export function connect(onMessage) {
 
   ws.onopen = () => {
     console.log('[WS] Connected')
+    reconnectAttempts = 0
     startPing()
   }
 
@@ -54,19 +63,19 @@ export function connect(onMessage) {
   }
 
   ws.onclose = () => {
-    console.log('[WS] Disconnected, reconnecting in 3s...')
+    console.log('[WS] Disconnected')
     stopPing()
     scheduleReconnect()
   }
 
-  ws.onerror = (error) => {
-    console.error('[WS] Error:', error)
+  ws.onerror = () => {
     ws.close()
   }
 }
 
 export function disconnect() {
   messageCallback = null
+  reconnectAttempts = MAX_RECONNECT_ATTEMPTS
   if (reconnectTimer) {
     clearTimeout(reconnectTimer)
     reconnectTimer = null
@@ -76,5 +85,4 @@ export function disconnect() {
     ws.close()
     ws = null
   }
-  console.log('[WS] Disconnected (manual)')
 }
