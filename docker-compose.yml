@@ -182,6 +182,20 @@ services:
       retries: 3
       start_period: 40s
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+    restart: unless-stopped
+
   mailhog:
     image: mailhog/mailhog:latest
     platform: linux/amd64
