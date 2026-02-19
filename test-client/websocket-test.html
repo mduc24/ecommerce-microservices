@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Notification Test</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a2e; color: #eee; padding: 24px; }
+        h1 { font-size: 1.4rem; margin-bottom: 16px; }
+
+        .status-bar {
+            display: flex; align-items: center; gap: 12px;
+            padding: 12px 16px; background: #16213e; border-radius: 8px; margin-bottom: 16px;
+        }
+        .status-dot {
+            width: 12px; height: 12px; border-radius: 50%; background: #e74c3c;
+            transition: background 0.3s;
+        }
+        .status-dot.connected { background: #2ecc71; }
+        .status-text { font-size: 0.9rem; flex: 1; }
+
+        .controls { display: flex; gap: 8px; margin-bottom: 16px; }
+        button {
+            padding: 8px 20px; border: none; border-radius: 6px; cursor: pointer;
+            font-size: 0.85rem; font-weight: 600; transition: opacity 0.2s;
+        }
+        button:hover { opacity: 0.85; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-connect { background: #2ecc71; color: #fff; }
+        .btn-disconnect { background: #e74c3c; color: #fff; }
+        .btn-clear { background: #636e72; color: #fff; }
+
+        .notifications {
+            background: #16213e; border-radius: 8px; padding: 16px;
+            max-height: 500px; overflow-y: auto;
+        }
+        .notifications h2 { font-size: 1rem; margin-bottom: 12px; color: #aaa; }
+        .empty { color: #636e72; font-style: italic; font-size: 0.85rem; }
+
+        .notif-item {
+            padding: 12px; background: #0f3460; border-radius: 6px; margin-bottom: 8px;
+            border-left: 4px solid #3498db; animation: fadeIn 0.3s ease;
+        }
+        .notif-item.order_confirmation { border-left-color: #2ecc71; }
+        .notif-item.order_status_update { border-left-color: #9b59b6; }
+        .notif-item.system { border-left-color: #f39c12; }
+        .notif-header { display: flex; justify-content: space-between; margin-bottom: 4px; }
+        .notif-type { font-size: 0.75rem; text-transform: uppercase; color: #74b9ff; font-weight: 600; }
+        .notif-time { font-size: 0.75rem; color: #636e72; }
+        .notif-subject { font-size: 0.9rem; font-weight: 600; margin-bottom: 2px; }
+        .notif-message { font-size: 0.8rem; color: #b2bec3; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+    <h1>WebSocket Notification Test Client</h1>
+
+    <div class="status-bar">
+        <div class="status-dot" id="statusDot"></div>
+        <span class="status-text" id="statusText">Disconnected</span>
+    </div>
+
+    <div class="controls">
+        <button class="btn-connect" id="btnConnect" onclick="connect()">Connect</button>
+        <button class="btn-disconnect" id="btnDisconnect" onclick="disconnect()" disabled>Disconnect</button>
+        <button class="btn-clear" onclick="clearNotifications()">Clear</button>
+    </div>
+
+    <div class="notifications">
+        <h2>Notifications</h2>
+        <div id="notifList"><p class="empty">No notifications yet. Connect and create an order to see real-time updates.</p></div>
+    </div>
+
+    <script>
+        const WS_URL = 'ws://localhost:3000/ws/notifications';
+        let ws = null;
+        let pingInterval = null;
+        let reconnectTimeout = null;
+        let autoReconnect = true;
+
+        function setStatus(connected) {
+            document.getElementById('statusDot').classList.toggle('connected', connected);
+            document.getElementById('statusText').textContent = connected ? 'Connected' : 'Disconnected';
+            document.getElementById('btnConnect').disabled = connected;
+            document.getElementById('btnDisconnect').disabled = !connected;
+        }
+
+        function addNotification(type, subject, message) {
+            const list = document.getElementById('notifList');
+            const empty = list.querySelector('.empty');
+            if (empty) empty.remove();
+
+            const time = new Date().toLocaleTimeString();
+            const cssClass = type || 'system';
+
+            const item = document.createElement('div');
+            item.className = `notif-item ${cssClass}`;
+            item.innerHTML = `
+                <div class="notif-header">
+                    <span class="notif-type">${type || 'system'}</span>
+                    <span class="notif-time">${time}</span>
+                </div>
+                <div class="notif-subject">${subject || ''}</div>
+                <div class="notif-message">${message || ''}</div>
+            `;
+
+            list.insertBefore(item, list.firstElementChild.nextSibling);
+        }
+
+        function clearNotifications() {
+            document.getElementById('notifList').innerHTML = '<p class="empty">Cleared.</p>';
+        }
+
+        function connect() {
+            if (ws && ws.readyState === WebSocket.OPEN) return;
+
+            autoReconnect = true;
+            if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null; }
+
+            ws = new WebSocket(WS_URL);
+
+            ws.onopen = () => {
+                setStatus(true);
+                // Keepalive ping every 30s
+                pingInterval = setInterval(() => {
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'ping' }));
+                    }
+                }, 30000);
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+
+                    if (msg.type === 'connected') {
+                        addNotification('system', 'Connected', msg.message);
+                    } else if (msg.type === 'pong') {
+                        // Ignore pong
+                    } else if (msg.type === 'notification') {
+                        const d = msg.data || {};
+                        addNotification(d.event_type, d.subject, d.message);
+                    } else {
+                        addNotification('system', msg.type, JSON.stringify(msg));
+                    }
+                } catch (e) {
+                    addNotification('system', 'Raw message', event.data);
+                }
+            };
+
+            ws.onclose = () => {
+                setStatus(false);
+                cleanup();
+                if (autoReconnect) {
+                    addNotification('system', 'Disconnected', 'Reconnecting in 3s...');
+                    reconnectTimeout = setTimeout(connect, 3000);
+                }
+            };
+
+            ws.onerror = () => {
+                // onclose will fire after onerror
+            };
+        }
+
+        function disconnect() {
+            autoReconnect = false;
+            if (reconnectTimeout) { clearTimeout(reconnectTimeout); reconnectTimeout = null; }
+            if (ws) ws.close();
+            cleanup();
+            setStatus(false);
+        }
+
+        function cleanup() {
+            if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
+        }
+    </script>
+</body>
+</html>

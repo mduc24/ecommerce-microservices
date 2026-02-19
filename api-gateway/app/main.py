@@ -1,10 +1,12 @@
 """
 API Gateway - Main Application Entry Point
 """
+import asyncio
 import logging
 from datetime import datetime
 
-from fastapi import FastAPI, Request
+import websockets
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -139,6 +141,66 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={"error": "Internal server error"}
     )
+
+# ==================== WebSocket Proxy ====================
+
+
+@app.websocket("/ws/notifications")
+async def websocket_proxy(client_ws: WebSocket):
+    """
+    Proxy WebSocket connection to notification-service.
+
+    Bidirectional forwarding between gateway client and backend service.
+    """
+    await client_ws.accept()
+
+    # Build backend WebSocket URL
+    backend_url = settings.notification_service_url.replace("http://", "ws://") + "/ws"
+
+    try:
+        async with websockets.connect(backend_url) as backend_ws:
+
+            async def forward_client_to_backend():
+                """Forward messages from gateway client to notification-service."""
+                try:
+                    while True:
+                        data = await client_ws.receive_text()
+                        await backend_ws.send(data)
+                except WebSocketDisconnect:
+                    await backend_ws.close()
+                except Exception:
+                    pass
+
+            async def forward_backend_to_client():
+                """Forward messages from notification-service to gateway client."""
+                try:
+                    async for message in backend_ws:
+                        await client_ws.send_text(message)
+                except Exception:
+                    pass
+
+            # Run both directions concurrently
+            client_task = asyncio.create_task(forward_client_to_backend())
+            backend_task = asyncio.create_task(forward_backend_to_client())
+
+            # Wait for either direction to finish (disconnect)
+            done, pending = await asyncio.wait(
+                [client_task, backend_task],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+
+            # Cancel the other task
+            for task in pending:
+                task.cancel()
+
+    except Exception as e:
+        logger.error("WebSocket proxy error: %s", e)
+    finally:
+        try:
+            await client_ws.close()
+        except Exception:
+            pass
+
 
 # ==================== Root Endpoint ====================
 

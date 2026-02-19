@@ -184,6 +184,7 @@ services:
 
   mailhog:
     image: mailhog/mailhog:latest
+    platform: linux/amd64
     container_name: mailhog
     ports:
       - "1025:1025"

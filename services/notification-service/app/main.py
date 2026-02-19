@@ -15,6 +15,7 @@ from app.config.settings import settings
 from app.database import engine, Base
 from app.events.consumer import event_consumer
 from app.routes import router
+from app.websocket.routes import router as ws_router
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,7 @@ app.add_middleware(
 
 
 app.include_router(router)
+app.include_router(ws_router)
 
 
 @app.get("/health")
