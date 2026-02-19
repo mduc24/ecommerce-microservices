@@ -1,24 +1,3 @@
-<script setup>
-import { ref, onMounted } from 'vue'
-import { getProducts } from '../services/api'
-import ProductCard from '../components/ProductCard.vue'
-
-const products = ref([])
-const loading = ref(true)
-const error = ref(null)
-
-onMounted(async () => {
-  try {
-    const { data } = await getProducts()
-    products.value = data.items || data
-  } catch (err) {
-    error.value = err.response?.data?.detail || 'Failed to load products'
-  } finally {
-    loading.value = false
-  }
-})
-</script>
-
 <template>
   <div class="max-w-7xl mx-auto px-4 py-8">
     <h1 class="text-3xl font-bold text-gray-900 mb-6">Products</h1>
@@ -54,3 +33,24 @@ onMounted(async () => {
     </div>
   </div>
 </template>
+
+<script setup>
+import { ref, onMounted } from 'vue'
+import { getProducts } from '../services/api'
+import ProductCard from '../components/ProductCard.vue'
+
+const products = ref([])
+const loading = ref(true)
+const error = ref(null)
+
+onMounted(async () => {
+  try {
+    const { data } = await getProducts()
+    products.value = data.items || data
+  } catch (err) {
+    error.value = err.response?.data?.detail || 'Failed to load products'
+  } finally {
+    loading.value = false
+  }
+})
+</script>

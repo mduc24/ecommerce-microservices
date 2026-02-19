@@ -1,11 +1,3 @@
-<script setup>
-import { useCartStore } from '../stores/cart'
-import { storeToRefs } from 'pinia'
-
-const cart = useCartStore()
-const { itemCount } = storeToRefs(cart)
-</script>
-
 <template>
   <header class="bg-white shadow-md sticky top-0 z-50">
     <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
@@ -47,3 +39,11 @@ const { itemCount } = storeToRefs(cart)
     </div>
   </header>
 </template>
+
+<script setup>
+import { useCartStore } from '../stores/cart'
+import { storeToRefs } from 'pinia'
+
+const cart = useCartStore()
+const { itemCount } = storeToRefs(cart)
+</script>

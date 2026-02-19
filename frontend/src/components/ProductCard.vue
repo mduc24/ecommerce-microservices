@@ -1,31 +1,3 @@
-<script setup>
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { useCartStore } from '../stores/cart'
-
-const props = defineProps({
-  product: { type: Object, required: true },
-})
-
-const router = useRouter()
-const cart = useCartStore()
-const added = ref(false)
-
-function viewDetails() {
-  router.push(`/products/${props.product.id}`)
-}
-
-function addToCart() {
-  cart.addItem(props.product)
-  added.value = true
-  setTimeout(() => (added.value = false), 1500)
-}
-
-function formatPrice(price) {
-  return Number(price).toFixed(2)
-}
-</script>
-
 <template>
   <div class="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow overflow-hidden flex flex-col">
     <!-- Image placeholder -->
@@ -83,3 +55,31 @@ function formatPrice(price) {
     </div>
   </div>
 </template>
+
+<script setup>
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { useCartStore } from '../stores/cart'
+
+const props = defineProps({
+  product: { type: Object, required: true },
+})
+
+const router = useRouter()
+const cart = useCartStore()
+const added = ref(false)
+
+function viewDetails() {
+  router.push(`/products/${props.product.id}`)
+}
+
+function addToCart() {
+  cart.addItem(props.product)
+  added.value = true
+  setTimeout(() => (added.value = false), 1500)
+}
+
+function formatPrice(price) {
+  return Number(price).toFixed(2)
+}
+</script>
