@@ -3,9 +3,12 @@ API routes for order service.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
+from app.config.settings import settings
 from app.database import get_db
 from app.schemas import (
     CreateOrderRequest,
@@ -15,6 +18,25 @@ from app.schemas import (
 from app.services import create_order, get_order_by_id, get_user_orders, update_order_status
 
 router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/users/login")
+
+
+def get_current_user_id(token: str = Depends(oauth2_scheme)) -> int:
+    """Extract and validate user_id from JWT Bearer token."""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        user_id_str: str = payload.get("sub")
+        if user_id_str is None:
+            raise credentials_exception
+        return int(user_id_str)
+    except (JWTError, ValueError):
+        raise credentials_exception
 
 
 @router.get("/health")
@@ -30,7 +52,7 @@ async def health_check():
 )
 async def create_order_endpoint(
     request: CreateOrderRequest,
-    user_id: int = Query(..., description="User ID"),  # TODO: user_id from JWT token
+    user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new order with product validation."""
@@ -43,12 +65,12 @@ async def create_order_endpoint(
     response_model=list[OrderResponse],
 )
 async def list_orders_endpoint(
-    user_id: int = Query(..., description="User ID"),  # TODO: user_id from JWT token
+    user_id: int = Depends(get_current_user_id),
     skip: int = Query(0, ge=0, description="Records to skip"),
     limit: int = Query(100, ge=1, le=100, description="Max records to return"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get all orders for a user with pagination."""
+    """Get all orders for the authenticated user with pagination."""
     orders = await get_user_orders(db, user_id, skip, limit)
     return orders
 
@@ -59,7 +81,7 @@ async def list_orders_endpoint(
 )
 async def get_order_endpoint(
     order_id: int,
-    user_id: int = Query(..., description="User ID"),  # TODO: user_id from JWT token
+    user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """Get a single order by ID."""
