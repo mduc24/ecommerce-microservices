@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config.settings import settings
-from app.routes import health, users, products, orders, notifications
+from app.routes import health, users, products, orders, notifications, auth
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -64,6 +64,9 @@ app.include_router(orders.router)
 
 # Notifications router (prefix="/notifications")
 app.include_router(notifications.router)
+
+# Auth router (prefix="/auth") - Google OAuth proxy
+app.include_router(auth.router)
 
 # ==================== Startup Event ====================
 

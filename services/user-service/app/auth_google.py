@@ -20,7 +20,7 @@ router = APIRouter(prefix="/auth", tags=["oauth"])
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
-GOOGLE_REDIRECT_URI = "http://localhost:8003/auth/google/callback"
+GOOGLE_REDIRECT_URI = "http://localhost:3000/auth/google/callback"
 
 
 @router.get("/google")
