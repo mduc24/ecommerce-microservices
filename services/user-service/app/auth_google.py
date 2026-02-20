@@ -2,11 +2,13 @@
 Google OAuth2 endpoints.
 """
 
+import secrets
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Optional
 
 from app.auth import create_access_token
 from app.config.settings import settings
@@ -23,9 +25,11 @@ GOOGLE_REDIRECT_URI = "http://localhost:8003/auth/google/callback"
 
 @router.get("/google")
 async def google_login():
-    """Redirect user to Google consent screen."""
+    """Redirect user to Google consent screen with CSRF state token."""
     if not settings.google_client_id:
         raise HTTPException(status_code=503, detail="Google OAuth not configured")
+
+    state = secrets.token_urlsafe(32)
 
     params = (
         f"client_id={settings.google_client_id}"
@@ -33,15 +37,34 @@ async def google_login():
         f"&response_type=code"
         f"&scope=openid%20email%20profile"
         f"&access_type=offline"
+        f"&state={state}"
     )
-    return RedirectResponse(url=f"{GOOGLE_AUTH_URL}?{params}")
+    response = RedirectResponse(url=f"{GOOGLE_AUTH_URL}?{params}")
+    # Store state in short-lived cookie for CSRF verification on callback
+    response.set_cookie(
+        key="oauth_state",
+        value=state,
+        max_age=300,  # 5 minutes
+        httponly=True,
+        samesite="lax",
+    )
+    return response
 
 
 @router.get("/google/callback")
-async def google_callback(code: str, db: AsyncSession = Depends(get_db)):
+async def google_callback(
+    code: str,
+    state: str,
+    db: AsyncSession = Depends(get_db),
+    oauth_state: Optional[str] = Cookie(default=None),
+):
     """Exchange code for token, upsert user, redirect to frontend with JWT."""
     if not settings.google_client_id:
         raise HTTPException(status_code=503, detail="Google OAuth not configured")
+
+    # CSRF check — state must match cookie set during /auth/google
+    if not oauth_state or not secrets.compare_digest(oauth_state, state):
+        raise HTTPException(status_code=400, detail="Invalid OAuth state")
 
     async with httpx.AsyncClient() as client:
         # Exchange authorization code for Google access token
@@ -113,6 +136,9 @@ async def google_callback(code: str, db: AsyncSession = Depends(get_db)):
 
     # Generate JWT and redirect to frontend
     jwt_token = create_access_token(data={"sub": str(user.id)})
-    return RedirectResponse(
+    response = RedirectResponse(
         url=f"{settings.frontend_url}/auth/callback?token={jwt_token}"
     )
+    # Clear the CSRF state cookie
+    response.delete_cookie(key="oauth_state")
+    return response
