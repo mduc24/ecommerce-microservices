@@ -98,8 +98,8 @@ async def login(
     )
     user = result.scalar_one_or_none()
 
-    # Verify user exists and password is correct
-    if not user or not verify_password(credentials.password, user.hashed_password):
+    # Verify user exists, has a password set, and password is correct
+    if not user or not user.hashed_password or not verify_password(credentials.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",

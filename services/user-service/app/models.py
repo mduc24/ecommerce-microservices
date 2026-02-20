@@ -19,7 +19,10 @@ class User(Base):
     # User credentials
     email = Column(String(255), unique=True, index=True, nullable=False)
     username = Column(String(50), unique=True, index=True, nullable=False)
-    hashed_password = Column(String(255), nullable=False)
+    hashed_password = Column(String(255), nullable=True)  # Nullable for OAuth users
+
+    # OAuth
+    google_id = Column(String(255), unique=True, nullable=True, index=True)
 
     # Account status
     is_active = Column(Boolean, default=True, nullable=False)
