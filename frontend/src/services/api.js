@@ -37,6 +37,22 @@ api.interceptors.response.use(
   }
 )
 
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+export function loginUser(email, password) {
+  return api.post('/users/login', { email, password })
+}
+
+export function registerUser(email, username, password) {
+  return api.post('/users/register', { email, username, password })
+}
+
+export function getMe() {
+  return api.get('/users/me')
+}
+
+// ── Products / Orders ─────────────────────────────────────────────────────────
+
 // Hardcoded user_id until JWT auth is implemented
 const USER_ID = 1
 
