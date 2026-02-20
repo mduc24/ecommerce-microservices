@@ -22,8 +22,14 @@ router = APIRouter(prefix="/api/v1/orders", tags=["orders"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/users/login")
 
 
-def get_current_user_id(token: str = Depends(oauth2_scheme)) -> int:
-    """Extract and validate user_id from JWT Bearer token."""
+class CurrentUser:
+    def __init__(self, user_id: int, email: str):
+        self.user_id = user_id
+        self.email = email
+
+
+def get_current_user(token: str = Depends(oauth2_scheme)) -> CurrentUser:
+    """Extract user_id and email from JWT Bearer token."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -32,9 +38,10 @@ def get_current_user_id(token: str = Depends(oauth2_scheme)) -> int:
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
         user_id_str: str = payload.get("sub")
+        email: str = payload.get("email", "")
         if user_id_str is None:
             raise credentials_exception
-        return int(user_id_str)
+        return CurrentUser(user_id=int(user_id_str), email=email)
     except (JWTError, ValueError):
         raise credentials_exception
 
@@ -52,11 +59,11 @@ async def health_check():
 )
 async def create_order_endpoint(
     request: CreateOrderRequest,
-    user_id: int = Depends(get_current_user_id),
+    current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new order with product validation."""
-    order = await create_order(db, request, user_id)
+    order = await create_order(db, request, current_user.user_id, current_user.email)
     return order
 
 
@@ -65,13 +72,13 @@ async def create_order_endpoint(
     response_model=list[OrderResponse],
 )
 async def list_orders_endpoint(
-    user_id: int = Depends(get_current_user_id),
+    current_user: CurrentUser = Depends(get_current_user),
     skip: int = Query(0, ge=0, description="Records to skip"),
     limit: int = Query(100, ge=1, le=100, description="Max records to return"),
     db: AsyncSession = Depends(get_db),
 ):
     """Get all orders for the authenticated user with pagination."""
-    orders = await get_user_orders(db, user_id, skip, limit)
+    orders = await get_user_orders(db, current_user.user_id, skip, limit)
     return orders
 
 
@@ -81,11 +88,11 @@ async def list_orders_endpoint(
 )
 async def get_order_endpoint(
     order_id: int,
-    user_id: int = Depends(get_current_user_id),
+    current_user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Get a single order by ID."""
-    order = await get_order_by_id(db, order_id, user_id)
+    order = await get_order_by_id(db, order_id, current_user.user_id)
     if not order:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

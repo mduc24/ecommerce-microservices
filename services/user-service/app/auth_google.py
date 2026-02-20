@@ -135,7 +135,7 @@ async def google_callback(
         await db.refresh(user)
 
     # Generate JWT and redirect to frontend
-    jwt_token = create_access_token(data={"sub": str(user.id)})
+    jwt_token = create_access_token(data={"sub": str(user.id), "email": user.email})
     response = RedirectResponse(
         url=f"{settings.frontend_url}/auth/callback?token={jwt_token}"
     )
