@@ -1,6 +1,6 @@
 # E-Commerce Microservices Platform
 
-A scalable e-commerce platform built with microservices architecture, featuring a Vue 3 storefront, real-time WebSocket notifications, and event-driven order processing.
+A scalable e-commerce platform built with microservices architecture, featuring a Vue 3 storefront, Google OAuth authentication, real-time WebSocket notifications, and event-driven order processing.
 
 [![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109.0-green.svg)](https://fastapi.tiangolo.com/)
@@ -55,7 +55,7 @@ A scalable e-commerce platform built with microservices architecture, featuring 
 |---------|--------|------|----------|-------------|
 | **Frontend** | ✅ Complete | 8080 | - | Vue 3 SPA (nginx, Dockerized) |
 | **API Gateway** | ✅ Complete | 3000 | - | Request routing, JWT validation, WebSocket proxy |
-| **User Service** | ✅ Complete | 8003 | users_db | JWT authentication, user management |
+| **User Service** | ✅ Complete | 8003 | users_db | JWT authentication, Google OAuth, user management |
 | **Product Service** | ✅ Complete | 8001 | products_db | Product catalog, inventory, CRUD |
 | **Order Service** | ✅ Complete | 8002 | orders_db | Order processing, event publishing |
 | **Notification Service** | ✅ Complete | 8004 | notifications_db | Email notifications, WebSocket push |
@@ -77,12 +77,13 @@ A scalable e-commerce platform built with microservices architecture, featuring 
 - **aio-pika** - Async RabbitMQ client
 - **aiosmtplib** - Async SMTP client
 - **Jinja2** - Email templates
+- **Authlib** - Google OAuth 2.0 integration
 
 ### Frontend
 - **Vue 3** - Composition API with `<script setup>`
 - **Vite** - Build tool with HMR
 - **Tailwind CSS v4** - Utility-first CSS
-- **Pinia** - State management (cart store with localStorage persistence)
+- **Pinia** - State management (auth store + cart store with localStorage persistence)
 - **Vue Router 4** - Client-side routing (createWebHistory)
 - **Axios** - HTTP client with interceptors
 
@@ -94,14 +95,19 @@ A scalable e-commerce platform built with microservices architecture, featuring 
 - **MailHog** - Email testing (dev)
 
 ### Authentication & Security
-- **JWT** - Stateless authentication
+- **JWT** - Stateless authentication (email + user_id claims)
 - **Bcrypt** - Password hashing (72-byte limit handled)
+- **Google OAuth 2.0** - Social login via Authorization Code Grant
+- **CSRF protection** - State token in `httponly` cookie, verified with `secrets.compare_digest`
 
 ---
 
 ## Features
 
 ### Frontend Storefront
+- Login and Register pages (email/password + Google OAuth button)
+- Auth-protected routes with Vue Router guards (`/cart`, `/orders`, `/products/:id`)
+- Persistent auth session (JWT stored in localStorage, restored on refresh)
 - Product catalog with responsive grid (2/3/4 columns)
 - Product detail page with quantity selector
 - Shopping cart with localStorage persistence
@@ -114,15 +120,18 @@ A scalable e-commerce platform built with microservices architecture, featuring 
 - Single entry point for all microservices
 - Request routing and proxying with retry + exponential backoff
 - JWT token validation middleware
+- Google OAuth proxy routes (`/auth/google`, `/auth/google/callback`) with CSRF cookie forwarding
 - Health check aggregation (parallel checks)
 - WebSocket proxy for real-time notifications
 - CORS configuration, request ID tracking
 
 ### User Service
 - User registration with email normalization
-- JWT-based authentication (login, token refresh)
+- JWT-based authentication (login, token includes `user_id` + `email`)
+- Google OAuth 2.0 (Authorization Code Grant, CSRF state protection)
+- Social login creates or links accounts by Google ID / email
 - Protected endpoints
-- Password hashing (bcrypt)
+- Password hashing (bcrypt); `hashed_password` nullable for OAuth-only accounts
 
 ### Product Service
 - Full CRUD (create, list, get, update, patch, delete)
@@ -161,15 +170,40 @@ A scalable e-commerce platform built with microservices architecture, featuring 
 
 > No need to install Python, Node.js, or PostgreSQL locally - everything runs in Docker!
 
-### 1. Clone and start
+### 1. Clone and configure
 
 ```bash
 git clone https://github.com/mduc24/ecommerce-microservices.git
 cd ecommerce-microservices
+```
+
+Create `services/user-service/.env` with your credentials:
+
+```bash
+# services/user-service/.env
+APP_NAME=user-service
+APP_ENV=development
+DEBUG=True
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/users_db
+SECRET_KEY=your-secret-key-change-in-production
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# Google OAuth (get from Google Cloud Console)
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+FRONTEND_URL=http://localhost:8080
+```
+
+> **Google OAuth setup**: Create OAuth credentials at [console.cloud.google.com](https://console.cloud.google.com/), set Authorized redirect URI to `http://localhost:3000/auth/google/callback`.
+
+### 2. Start all services
+
+```bash
 docker-compose up -d
 ```
 
-That's it — all services including the frontend start together.
+All services including the frontend start together.
 
 ### 2. Access services
 
@@ -188,6 +222,13 @@ That's it — all services including the frontend start together.
 ## API Endpoints
 
 All requests go through the API Gateway at `localhost:3000`.
+
+### Auth (Google OAuth)
+
+| Method | Endpoint | Description | Auth |
+|--------|----------|-------------|------|
+| `GET` | `/auth/google` | Redirect to Google login | No |
+| `GET` | `/auth/google/callback` | Handle OAuth callback, redirect to frontend with JWT | No |
 
 ### Users
 
@@ -213,12 +254,12 @@ All requests go through the API Gateway at `localhost:3000`.
 
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
-| `POST` | `/orders?user_id=1` | Create order | No* |
-| `GET` | `/orders?user_id=1` | List user orders | No* |
-| `GET` | `/orders/{id}?user_id=1` | Get order by ID | No* |
-| `PATCH` | `/orders/{id}/status` | Update order status | No* |
+| `POST` | `/orders` | Create order | Yes |
+| `GET` | `/orders` | List user orders | Yes |
+| `GET` | `/orders/{id}` | Get order by ID | Yes |
+| `PATCH` | `/orders/{id}/status` | Update order status | Yes |
 
-*`user_id` passed as query param (placeholder until JWT integration)
+`user_id` and `email` are extracted from the JWT Bearer token.
 
 ### Notifications
 
@@ -243,11 +284,11 @@ ecommerce-microservices/
 ├── frontend/                          # Vue 3 SPA
 │   ├── src/
 │   │   ├── components/                # AppHeader, ProductCard, NotificationToast
-│   │   ├── views/                     # Products, ProductDetail, Cart, Orders
-│   │   ├── stores/                    # Pinia cart store
+│   │   ├── views/                     # Products, ProductDetail, Cart, Orders, Login, Register, AuthCallback
+│   │   ├── stores/                    # Pinia auth store + cart store
 │   │   ├── services/                  # API (axios) + WebSocket
 │   │   ├── composables/               # useNotifications
-│   │   ├── router/                    # Vue Router
+│   │   ├── router/                    # Vue Router (auth guards)
 │   │   ├── App.vue
 │   │   └── main.js
 │   ├── Dockerfile                     # Multi-stage build (node → nginx)
@@ -256,11 +297,11 @@ ecommerce-microservices/
 │   └── package.json
 ├── api-gateway/                       # FastAPI gateway
 │   └── app/
-│       ├── routes/                    # health, users, products, orders, notifications
+│       ├── routes/                    # health, auth, users, products, orders, notifications
 │       ├── middleware/                 # JWT auth
 │       └── utils/                     # ServiceClient (retry + backoff)
 ├── services/
-│   ├── user-service/                  # JWT auth, user management
+│   ├── user-service/                  # JWT auth, Google OAuth, user management
 │   ├── product-service/               # Product CRUD, inventory
 │   ├── order-service/                 # Order processing, RabbitMQ publisher
 │   └── notification-service/          # Email + WebSocket notifications
@@ -314,15 +355,16 @@ docker-compose exec user-service poetry run pytest
 
 ## E2E Flow
 
-1. Browse products at http://localhost:8080
-2. Add items to cart
-3. Place order (checkout)
-4. Order Service validates stock via Product Service
-5. Order saved to DB, event published to RabbitMQ
-6. Notification Service consumes event
-7. Confirmation email sent (viewable at http://localhost:8025)
-8. WebSocket broadcast pushes toast notification to frontend
-9. Order appears on Orders page with status badge
+1. Visit http://localhost:8080 → redirected to Login page
+2. Login with email/password **or** click "Sign in with Google" (OAuth 2.0 flow)
+3. After auth, JWT stored in localStorage; header shows username + Logout
+4. Browse products, view details, add items to cart
+5. Checkout (cart → order creation) — JWT sent as Bearer token
+6. Order Service validates stock via Product Service, extracts `user_id` + `email` from JWT
+7. Order saved to DB, event published to RabbitMQ with real user email
+8. Notification Service consumes event, sends HTML email (viewable at http://localhost:8025)
+9. WebSocket broadcast pushes toast notification to frontend
+10. Order appears on Orders page with status badge
 
 ---
 
@@ -337,6 +379,8 @@ docker-compose exec user-service poetry run pytest
 - [x] WebSocket real-time notifications
 - [x] Vue 3 frontend storefront
 - [x] Frontend Dockerized (nginx, multi-stage build)
+- [x] Google OAuth 2.0 (social login with CSRF protection)
+- [x] JWT auth enforced on Order Service endpoints
 - [ ] Inventory decrement on order creation
 - [ ] Unit tests (pytest-asyncio, vitest)
 - [ ] Service mesh (Istio)
