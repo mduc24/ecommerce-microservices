@@ -37,14 +37,14 @@ class OrderCreatedEvent(BaseModel):
     data: OrderCreatedData
 
     @classmethod
-    def from_order(cls, order) -> "OrderCreatedEvent":
+    def from_order(cls, order, user_email: str = "") -> "OrderCreatedEvent":
         """Build event from an Order model instance."""
         return cls(
             timestamp=datetime.utcnow().isoformat() + "Z",
             data=OrderCreatedData(
                 order_id=order.id,
                 user_id=order.user_id,
-                user_email=f"user_{order.user_id}@example.com",
+                user_email=user_email,
                 total_amount=float(order.total_amount),
                 items=[
                     OrderItemData(
@@ -82,7 +82,7 @@ class OrderStatusUpdatedEvent(BaseModel):
 
     @classmethod
     def from_status_change(
-        cls, order_id: int, old_status: str, new_status: str, user_id: int = 0, updated_by: str = "system"
+        cls, order_id: int, old_status: str, new_status: str, user_id: int = 0, user_email: str = "", updated_by: str = "system"
     ) -> "OrderStatusUpdatedEvent":
         """Build event from status change parameters."""
         return cls(
@@ -90,7 +90,7 @@ class OrderStatusUpdatedEvent(BaseModel):
             data=OrderStatusUpdatedData(
                 order_id=order_id,
                 user_id=user_id,
-                user_email=f"user_{user_id}@example.com",
+                user_email=user_email,
                 old_status=old_status,
                 new_status=new_status,
                 updated_by=updated_by,

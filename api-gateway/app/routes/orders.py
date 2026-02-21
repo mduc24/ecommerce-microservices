@@ -17,13 +17,20 @@ async def _proxy_request(
     body: dict | None = None,
     query_params: dict | None = None,
 ) -> JSONResponse:
-    """Helper to proxy requests to order-service."""
+    """Helper to proxy requests to order-service, forwarding Authorization header."""
     service_client = ServiceClient()
+
+    # Forward JWT token so order-service can authenticate the user
+    headers = {}
+    auth_header = request.headers.get("Authorization")
+    if auth_header:
+        headers["Authorization"] = auth_header
 
     result = await service_client.forward_request(
         service_url=settings.order_service_url,
         method=method,
         path=path,
+        headers=headers,
         body=body,
         query_params=query_params,
     )

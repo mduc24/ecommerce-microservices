@@ -28,6 +28,7 @@ async def create_order(
     db: AsyncSession,
     request: CreateOrderRequest,
     user_id: int,
+    user_email: str = "",
 ) -> Order:
     """
     Create a new order with product validation.
@@ -110,7 +111,7 @@ async def create_order(
 
         # Publish OrderCreated event (don't fail if publishing fails)
         try:
-            event = OrderCreatedEvent.from_order(order)
+            event = OrderCreatedEvent.from_order(order, user_email)
             await event_publisher.publish(event, "order.created")
         except Exception as e:
             logger.error(f"Failed to publish OrderCreated event: {e}")

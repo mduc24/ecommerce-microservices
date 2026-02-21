@@ -27,16 +27,8 @@ services:
       dockerfile: Dockerfile
       target: development
     container_name: user-service
-    environment:
-      APP_NAME: user-service
-      APP_ENV: development
-      DEBUG: "True"
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/users_db
-      SECRET_KEY: your-secret-key-change-this-in-production
-      ALGORITHM: HS256
-      ACCESS_TOKEN_EXPIRE_MINUTES: 30
-      HOST: 0.0.0.0
-      PORT: 8000
+    env_file:
+      - ./services/user-service/.env
     ports:
       - "8003:8000"
     depends_on:
@@ -181,6 +173,20 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    networks:
+      - ecommerce-network
+    restart: unless-stopped
 
   mailhog:
     image: mailhog/mailhog:latest

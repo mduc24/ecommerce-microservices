@@ -6,6 +6,7 @@ from fastapi import FastAPI
 
 from app.config.settings import settings
 from app.routes import router
+from app.auth_google import router as google_router
 
 # Create FastAPI application
 app = FastAPI(
@@ -17,6 +18,7 @@ app = FastAPI(
 
 # Include routers
 app.include_router(router)
+app.include_router(google_router)
 
 
 @app.get("/health")

@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     rabbitmq_pass: str = "admin123"
     rabbitmq_exchange: str = "ecommerce_events"
 
+    # JWT (must match user-service)
+    secret_key: str = "your-secret-key-change-this-in-production"
+    algorithm: str = "HS256"
+
     # Server
     host: str = "0.0.0.0"
     port: int = 8002

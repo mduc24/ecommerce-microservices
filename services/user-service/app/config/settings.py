@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
 
+    # Google OAuth
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    frontend_url: str = "http://localhost:8080"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
