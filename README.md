@@ -1,104 +1,46 @@
 # E-Commerce Microservices Platform
 
+![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=flat&logo=docker&logoColor=white)
+![Python](https://img.shields.io/badge/python-3.11-blue.svg)
+![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=flat&logo=fastapi)
+![Vue.js](https://img.shields.io/badge/vue.js-3-green.svg?logo=vuedotjs)
+![PostgreSQL](https://img.shields.io/badge/postgresql-%23316192.svg?style=flat&logo=postgresql&logoColor=white)
+![RabbitMQ](https://img.shields.io/badge/rabbitmq-%23FF6600.svg?&style=flat&logo=rabbitmq&logoColor=white)
+
 A scalable e-commerce platform built with microservices architecture, featuring a Vue 3 storefront, Google OAuth authentication, real-time WebSocket notifications, and event-driven order processing.
 
-[![Python](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.109.0-green.svg)](https://fastapi.tiangolo.com/)
-[![Vue.js](https://img.shields.io/badge/Vue.js-3.5-42b883.svg)](https://vuejs.org/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue.svg)](https://www.postgresql.org/)
-[![Docker](https://img.shields.io/badge/Docker-Compose-blue.svg)](https://docs.docker.com/compose/)
-[![RabbitMQ](https://img.shields.io/badge/RabbitMQ-3-orange.svg)](https://www.rabbitmq.com/)
+---
+
+## Key Highlights
+
+- **Microservices architecture** — 4 independent Python/FastAPI services, each with its own PostgreSQL database, orchestrated via Docker Compose
+- **Event-driven messaging** — RabbitMQ TOPIC exchange decouples order processing from email/WebSocket notifications
+- **Full-stack** — Vue 3 SPA (Tailwind CSS, Pinia, Vue Router) communicates through a single API Gateway with JWT + Google OAuth 2.0 auth
 
 ---
 
-## Architecture Overview
+## Architecture
 
+```mermaid
+graph TB
+    FE["Frontend<br/>Vue 3 · nginx<br/>:8080"] --> GW["API Gateway<br/>FastAPI<br/>:3000"]
+
+    GW --> US["User Service<br/>:8003"]
+    GW --> PS["Product Service<br/>:8001"]
+    GW --> OS["Order Service<br/>:8002"]
+    GW <-->|"WebSocket"| NS["Notification Service<br/>:8004"]
+
+    US --> PG[("PostgreSQL<br/>:5432")]
+    PS --> PG
+    OS --> PG
+    NS --> PG
+
+    OS -->|"HTTP"| PS
+    OS -->|"Publish events"| MQ["RabbitMQ<br/>:5672"]
+    MQ -->|"Consume events"| NS
+
+    NS --> MH["MailHog SMTP<br/>:1025"]
 ```
-                    ┌─────────────┐
-                    │   Frontend   │
-                    │  Vue 3 SPA  │
-                    │  nginx :8080 │
-                    └──────┬──────┘
-                           │
-                    ┌──────▼──────┐
-                    │ API Gateway  │
-                    │  FastAPI     │
-                    │   :3000     │
-                    └──┬───┬───┬──┘
-                       │   │   │
-            ┌──────────┤   │   ├──────────┐
-            │          │   │   │          │
-      ┌─────▼──┐  ┌───▼───▼┐  ┌──▼───────┐
-      │ User   │  │Product │  │ Order    │
-      │Service │  │Service │  │ Service  │
-      │ :8003  │  │ :8001  │  │ :8002   │
-      └────┬───┘  └───┬────┘  └──┬──────┘
-           │          │           │
-           │    ┌─────▼─────┐    │  RabbitMQ
-           │    │ PostgreSQL│    │◄──────────┐
-           │    │  :5432    │    │           │
-           └────►           ◄────┘    ┌─────▼───────┐
-                └───────────┘         │Notification │
-                                      │  Service    │
-                                      │   :8004    │
-                                      └──┬─────┬───┘
-                                         │     │
-                                   ┌─────▼┐  ┌─▼──────┐
-                                   │ Email │  │WebSocket│
-                                   │ SMTP  │  │  Push   │
-                                   └──────┘  └────────┘
-```
-
-### Services
-
-| Service | Status | Port | Database | Description |
-|---------|--------|------|----------|-------------|
-| **Frontend** | ✅ Complete | 8080 | - | Vue 3 SPA (nginx, Dockerized) |
-| **API Gateway** | ✅ Complete | 3000 | - | Request routing, JWT validation, WebSocket proxy |
-| **User Service** | ✅ Complete | 8003 | users_db | JWT authentication, Google OAuth, user management |
-| **Product Service** | ✅ Complete | 8001 | products_db | Product catalog, inventory, CRUD |
-| **Order Service** | ✅ Complete | 8002 | orders_db | Order processing, event publishing |
-| **Notification Service** | ✅ Complete | 8004 | notifications_db | Email notifications, WebSocket push |
-| **RabbitMQ** | ✅ Complete | 5672 / 15672 | - | Message broker (TOPIC exchange) |
-| **MailHog** | ✅ Complete | 1025 / 8025 | - | Email capture (dev only) |
-| **PostgreSQL** | ✅ Complete | 5432 | 4 databases | Shared database server |
-| **Adminer** | ✅ Complete | 3636 | - | Database GUI (dev only) |
-
----
-
-## Tech Stack
-
-### Backend
-- **Python 3.11** - Async/await support
-- **FastAPI** - High-performance async web framework
-- **SQLAlchemy 2.0** - Async ORM with connection pooling
-- **Alembic** - Database migrations
-- **Pydantic v2** - Data validation
-- **aio-pika** - Async RabbitMQ client
-- **aiosmtplib** - Async SMTP client
-- **Jinja2** - Email templates
-- **Authlib** - Google OAuth 2.0 integration
-
-### Frontend
-- **Vue 3** - Composition API with `<script setup>`
-- **Vite** - Build tool with HMR
-- **Tailwind CSS v4** - Utility-first CSS
-- **Pinia** - State management (auth store + cart store with localStorage persistence)
-- **Vue Router 4** - Client-side routing (createWebHistory)
-- **Axios** - HTTP client with interceptors
-
-### Infrastructure
-- **PostgreSQL 16** - 4 independent databases
-- **RabbitMQ 3** - TOPIC exchange, durable queues
-- **Docker Compose** - Multi-container orchestration
-- **Poetry** - Python dependency management
-- **MailHog** - Email testing (dev)
-
-### Authentication & Security
-- **JWT** - Stateless authentication (email + user_id claims)
-- **Bcrypt** - Password hashing (72-byte limit handled)
-- **Google OAuth 2.0** - Social login via Authorization Code Grant
-- **CSRF protection** - State token in `httponly` cookie, verified with `secrets.compare_digest`
 
 ---
 
@@ -142,8 +84,9 @@ A scalable e-commerce platform built with microservices architecture, featuring 
 ### Order Service
 - Order creation with product validation (calls product-service)
 - Product snapshot pattern (name/price stored at order time)
-- Order status transitions (pending → confirmed → shipped → delivered / cancelled)
+- Order status transitions (`pending → confirmed → shipped → delivered / cancelled`)
 - RabbitMQ event publishing on create and status update
+- `user_id` + `email` extracted from JWT Bearer token
 
 ### Notification Service
 - RabbitMQ consumer for order events
@@ -162,25 +105,60 @@ A scalable e-commerce platform built with microservices architecture, featuring 
 
 ---
 
+## Tech Stack
+
+| Backend | Frontend | Infrastructure |
+|---------|----------|----------------|
+| Python 3.11 | Vue 3 (Composition API) | PostgreSQL 16 (4 databases) |
+| FastAPI | Vite + HMR | RabbitMQ 3 (TOPIC exchange) |
+| SQLAlchemy 2.0 (async) | Tailwind CSS v4 | Docker Compose |
+| Alembic (async migrations) | Pinia (state management) | Poetry (dependency management) |
+| Pydantic v2 | Vue Router 4 | MailHog (email testing, dev) |
+| aio-pika (RabbitMQ) | Axios (HTTP client) | Adminer (DB GUI, dev) |
+| aiosmtplib + Jinja2 | | |
+| Authlib (Google OAuth 2.0) | | |
+| python-jose (JWT) | | |
+| Bcrypt (password hashing) | | |
+
+---
+
+## Services & Ports
+
+| Service | Port | Description |
+|---------|------|-------------|
+| **Frontend** | 8080 | Vue 3 SPA served via nginx |
+| **API Gateway** | 3000 | Single entry point, JWT validation, WebSocket proxy |
+| **User Service** | 8003 | JWT authentication, Google OAuth, user management |
+| **Product Service** | 8001 | Product catalog, inventory, CRUD |
+| **Order Service** | 8002 | Order processing, RabbitMQ event publisher |
+| **Notification Service** | 8004 | Email notifications, WebSocket push |
+| **PostgreSQL** | 5432 | 4 independent databases |
+| **RabbitMQ** | 5672 / 15672 | Message broker / Management UI |
+| **MailHog** | 1025 / 8025 | SMTP capture / Web UI (dev only) |
+| **Adminer** | 3636 | Database GUI (dev only) |
+
+---
+
 ## Quick Start
 
 ### Prerequisites
 - **Docker** >= 20.10
 - **Docker Compose** >= 2.0
 
-> No need to install Python, Node.js, or PostgreSQL locally - everything runs in Docker!
+> No need to install Python, Node.js, or PostgreSQL locally — everything runs in Docker.
 
-### 1. Clone and configure
+### 1. Clone
 
 ```bash
 git clone https://github.com/mduc24/ecommerce-microservices.git
 cd ecommerce-microservices
 ```
 
-Create `services/user-service/.env` with your credentials:
+### 2. Configure
+
+Create `services/user-service/.env`:
 
 ```bash
-# services/user-service/.env
 APP_NAME=user-service
 APP_ENV=development
 DEBUG=True
@@ -195,85 +173,41 @@ GOOGLE_CLIENT_SECRET=your-google-client-secret
 FRONTEND_URL=http://localhost:8080
 ```
 
-> **Google OAuth setup**: Create OAuth credentials at [console.cloud.google.com](https://console.cloud.google.com/), set Authorized redirect URI to `http://localhost:3000/auth/google/callback`.
+> **Google OAuth**: Create credentials at [console.cloud.google.com](https://console.cloud.google.com/), set redirect URI to `http://localhost:3000/auth/google/callback`.
 
-### 2. Start all services
+### 3. Start
 
 ```bash
 docker-compose up -d
 ```
 
-All services including the frontend start together.
+### 4. Access
 
-### 2. Access services
-
-| Service | URL |
-|---------|-----|
-| **Frontend** | http://localhost:8080 |
-| **API Gateway** | http://localhost:3000 |
-| **API Docs (Swagger)** | http://localhost:3000/docs |
-| **Health Check** | http://localhost:3000/health |
-| **RabbitMQ Management** | http://localhost:15672 (admin / admin123) |
-| **MailHog Web UI** | http://localhost:8025 |
-| **Adminer (DB GUI)** | http://localhost:3636 (postgres / postgres) |
+| URL | Description |
+|-----|-------------|
+| http://localhost:8080 | Frontend |
+| http://localhost:3000/docs | API Gateway Swagger UI |
+| http://localhost:3000/health | Aggregated health check |
+| http://localhost:15672 | RabbitMQ Management (admin / admin123) |
+| http://localhost:8025 | MailHog — view sent emails |
+| http://localhost:3636 | Adminer DB GUI (postgres / postgres) |
 
 ---
 
-## API Endpoints
+## API Summary
 
-All requests go through the API Gateway at `localhost:3000`.
+All requests go through the API Gateway at `http://localhost:3000`.
 
-### Auth (Google OAuth)
+| Service | Base Path | Auth Required |
+|---------|-----------|---------------|
+| Google OAuth | `/auth/google`, `/auth/google/callback` | No |
+| Users | `/users/register`, `/users/login`, `/users/me` | No / No / Yes |
+| Products | `/products`, `/products/{id}`, `/products/{id}/stock` | No |
+| Orders | `/orders`, `/orders/{id}`, `/orders/{id}/status` | Yes (JWT Bearer) |
+| Notifications | `/notifications`, `/notifications/{id}` | No |
+| WebSocket | `ws://localhost:3000/ws/notifications` | — |
 
-| Method | Endpoint | Description | Auth |
-|--------|----------|-------------|------|
-| `GET` | `/auth/google` | Redirect to Google login | No |
-| `GET` | `/auth/google/callback` | Handle OAuth callback, redirect to frontend with JWT | No |
-
-### Users
-
-| Method | Endpoint | Description | Auth |
-|--------|----------|-------------|------|
-| `POST` | `/users/register` | Register new user | No |
-| `POST` | `/users/login` | Login, get JWT token | No |
-| `GET` | `/users/me` | Get current user | Yes |
-
-### Products
-
-| Method | Endpoint | Description | Auth |
-|--------|----------|-------------|------|
-| `GET` | `/products` | List products (paginated) | No |
-| `GET` | `/products/{id}` | Get product by ID | No |
-| `POST` | `/products` | Create product | No |
-| `PUT` | `/products/{id}` | Update product | No |
-| `PATCH` | `/products/{id}` | Partial update | No |
-| `DELETE` | `/products/{id}` | Delete product | No |
-| `PATCH` | `/products/{id}/stock` | Update stock | No |
-
-### Orders
-
-| Method | Endpoint | Description | Auth |
-|--------|----------|-------------|------|
-| `POST` | `/orders` | Create order | Yes |
-| `GET` | `/orders` | List user orders | Yes |
-| `GET` | `/orders/{id}` | Get order by ID | Yes |
-| `PATCH` | `/orders/{id}/status` | Update order status | Yes |
-
-`user_id` and `email` are extracted from the JWT Bearer token.
-
-### Notifications
-
-| Method | Endpoint | Description | Auth |
-|--------|----------|-------------|------|
-| `GET` | `/notifications` | List notifications (filtered) | No |
-| `GET` | `/notifications/{id}` | Get notification by ID | No |
-| `POST` | `/notifications/{id}/retry` | Retry failed notification | No |
-
-### WebSocket
-
-| Endpoint | Description |
-|----------|-------------|
-| `ws://localhost:3000/ws/notifications` | Real-time notification push |
+> Full endpoint details: [API_DOCUMENTATION.md](./API_DOCUMENTATION.md)
 
 ---
 
@@ -281,47 +215,25 @@ All requests go through the API Gateway at `localhost:3000`.
 
 ```
 ecommerce-microservices/
-├── frontend/                          # Vue 3 SPA
-│   ├── src/
-│   │   ├── components/                # AppHeader, ProductCard, NotificationToast
-│   │   ├── views/                     # Products, ProductDetail, Cart, Orders, Login, Register, AuthCallback
-│   │   ├── stores/                    # Pinia auth store + cart store
-│   │   ├── services/                  # API (axios) + WebSocket
-│   │   ├── composables/               # useNotifications
-│   │   ├── router/                    # Vue Router (auth guards)
-│   │   ├── App.vue
-│   │   └── main.js
-│   ├── Dockerfile                     # Multi-stage build (node → nginx)
-│   ├── nginx.conf                     # SPA fallback + /api proxy + /ws proxy
-│   ├── vite.config.js
-│   └── package.json
-├── api-gateway/                       # FastAPI gateway
-│   └── app/
-│       ├── routes/                    # health, auth, users, products, orders, notifications
-│       ├── middleware/                 # JWT auth
-│       └── utils/                     # ServiceClient (retry + backoff)
+├── frontend/               # Vue 3 SPA (nginx, multi-stage Docker build)
+├── api-gateway/            # FastAPI gateway (routing, JWT, WebSocket proxy)
 ├── services/
-│   ├── user-service/                  # JWT auth, Google OAuth, user management
-│   ├── product-service/               # Product CRUD, inventory
-│   ├── order-service/                 # Order processing, RabbitMQ publisher
-│   └── notification-service/          # Email + WebSocket notifications
-│       └── app/
-│           ├── events/                # RabbitMQ consumer
-│           ├── services/              # Email service (aiosmtplib)
-│           ├── templates/             # Jinja2 email templates
-│           └── websocket/             # ConnectionManager + WS endpoint
+│   ├── user-service/       # JWT auth, Google OAuth, user management
+│   ├── product-service/    # Product catalog, inventory, CRUD
+│   ├── order-service/      # Order processing, RabbitMQ publisher
+│   └── notification-service/ # Email + WebSocket notifications
 ├── scripts/
-│   └── init-databases.sql             # Creates 4 PostgreSQL databases
-├── docker-compose.yml                 # All services
-├── docker-compose.override.yml        # Dev tools (Adminer)
-└── CLAUDE.md                          # AI development instructions
+│   └── init-databases.sql  # Creates 4 PostgreSQL databases
+├── terraform/              # Infrastructure as Code (planned)
+├── docker-compose.yml
+└── docker-compose.override.yml
 ```
 
 ---
 
 ## Development
 
-### Add a dependency (via Docker)
+### Add a dependency
 
 ```bash
 # Python service
@@ -341,8 +253,8 @@ docker-compose exec user-service alembic upgrade head
 ### View logs
 
 ```bash
-docker-compose logs -f                    # All services
-docker-compose logs -f notification-service  # Specific service
+docker-compose logs -f                          # All services
+docker-compose logs -f notification-service     # Specific service
 ```
 
 ### Run tests
@@ -368,27 +280,37 @@ docker-compose exec user-service poetry run pytest
 
 ---
 
-## Roadmap
+## Documentation
 
-- [x] User Service with JWT authentication
-- [x] Product Service with full CRUD
-- [x] Order Service with inter-service communication
-- [x] API Gateway (FastAPI proxy)
-- [x] RabbitMQ event-driven messaging
-- [x] Notification Service (email + DB tracking + retry)
-- [x] WebSocket real-time notifications
-- [x] Vue 3 frontend storefront
-- [x] Frontend Dockerized (nginx, multi-stage build)
-- [x] Google OAuth 2.0 (social login with CSRF protection)
-- [x] JWT auth enforced on Order Service endpoints
-- [ ] Inventory decrement on order creation
-- [ ] Unit tests (pytest-asyncio, vitest)
-- [ ] Service mesh (Istio)
-- [ ] Kubernetes deployment
-- [ ] CI/CD pipeline (GitHub Actions)
-- [ ] Terraform infrastructure
-- [ ] Monitoring (Prometheus/Grafana)
-- [ ] Logging (ELK Stack)
+| Document | Description |
+|----------|-------------|
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | Detailed architecture decisions and service design |
+| [API_DOCUMENTATION.md](./API_DOCUMENTATION.md) | Full API reference for all endpoints |
+| [DEPLOYMENT.md](./DEPLOYMENT.md) | Production deployment guide (Kubernetes, Terraform) |
+| [DESIGN_DECISIONS.md](./DESIGN_DECISIONS.md) | Trade-offs and rationale behind key choices |
+
+---
+
+## Planned Improvements
+
+- Inventory decrement on order creation (currently stock is not reduced)
+- Unit & integration tests (pytest-asyncio, vitest)
+- Kubernetes deployment with Helm charts
+- CI/CD pipeline (GitHub Actions)
+- Redis caching for product catalog
+- Distributed tracing (OpenTelemetry + Jaeger)
+
+---
+
+## Screenshots
+
+> _Screenshots and demo GIFs coming soon._
+
+<!-- Add screenshots here:
+![Login Page](./docs/screenshots/login.png)
+![Product Catalog](./docs/screenshots/products.png)
+![Orders Page](./docs/screenshots/orders.png)
+-->
 
 ---
 
@@ -398,6 +320,4 @@ This project is licensed under the MIT License.
 
 ---
 
-## Author
-
-**Minh Duc** - [@mduc24](https://github.com/mduc24)
+**Author:** Minh Duc — [@mduc24](https://github.com/mduc24)
