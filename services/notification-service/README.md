@@ -1,6 +1,6 @@
 # Notification Service
 
-Consumes order events from RabbitMQ, sends HTML emails via SMTP, and broadcasts real-time push notifications over WebSocket. Tracks all deliveries in its own database with a retry API for failures.
+Consumes order events from AWS SQS, sends HTML emails via SMTP, and broadcasts real-time push notifications over WebSocket. Tracks all deliveries in its own database with a retry API for failures.
 
 **Port:** 8004 · **Database:** `notifications_db`
 
@@ -8,7 +8,7 @@ Consumes order events from RabbitMQ, sends HTML emails via SMTP, and broadcasts 
 
 ## Responsibilities
 
-- Consume `order.created` and `order.status.updated` events from RabbitMQ
+- Consume `order.created` and `order.status.updated` events from SQS (`notification-queue`)
 - Render and send HTML emails using Jinja2 templates (MailHog in dev)
 - Broadcast WebSocket messages to all connected clients on each event
 - Record every notification attempt (status, error message) in the database
@@ -22,7 +22,7 @@ Consumes order events from RabbitMQ, sends HTML emails via SMTP, and broadcasts 
 |-|-|
 | Framework | FastAPI (async) |
 | ORM | SQLAlchemy 2.0 async + asyncpg |
-| Message queue | aio-pika (RabbitMQ consumer) |
+| Message queue | aioboto3 (SQS long-polling consumer) |
 | Email | aiosmtplib (async SMTP) |
 | Templates | Jinja2 |
 | WebSocket | FastAPI WebSocket + `ConnectionManager` singleton |
@@ -49,10 +49,11 @@ Consumes order events from RabbitMQ, sends HTML emails via SMTP, and broadcasts 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `DATABASE_URL` | Yes | `postgresql+asyncpg://postgres:postgres@postgres:5432/notifications_db` |
-| `RABBITMQ_HOST` | Yes | `rabbitmq` |
-| `RABBITMQ_USER` / `RABBITMQ_PASS` | Yes | `admin` / `admin123` |
-| `RABBITMQ_EXCHANGE` | Yes | `ecommerce_events` |
-| `RABBITMQ_QUEUE` | Yes | `notification_queue` |
+| `AWS_ENDPOINT_URL` | Dev | `http://localstack:4566` (omit for production AWS) |
+| `AWS_REGION` | Yes | `us-east-1` |
+| `AWS_ACCESS_KEY_ID` | Dev | `test` (use IAM role in production) |
+| `AWS_SECRET_ACCESS_KEY` | Dev | `test` (use IAM role in production) |
+| `SQS_QUEUE_NAME` | Yes | `notification-queue` |
 | `SMTP_HOST` | Yes | `mailhog` (dev) |
 | `SMTP_PORT` | Yes | `1025` (MailHog) |
 | `SMTP_FROM` | Yes | Sender address (e.g. `noreply@ecommerce.com`) |
@@ -61,6 +62,6 @@ Consumes order events from RabbitMQ, sends HTML emails via SMTP, and broadcasts 
 
 ## Key Design Decisions
 
-- **Always-ACK pattern** — the RabbitMQ consumer always ACKs messages, even on failure. Errors are recorded in the `notifications` table (`status=failed`, `error_message` set). Failed notifications are retriable via `POST /notifications/retry/{id}`. This avoids infinite requeue loops for messages that will always fail (e.g., invalid email address).
+- **Delete-on-success pattern** — the SQS consumer only deletes a message after the full handler completes without exception. If processing fails (DB error, SMTP error, etc.), the message stays in the queue and SQS redelivers it after the visibility timeout. Persistent failures are recorded in the `notifications` table (`status=failed`) and retriable via `POST /notifications/retry/{id}`.
 - **WebSocket `ConnectionManager` singleton** — a single `ConnectionManager` instance tracks all active WebSocket connections. It handles dead connection cleanup and broadcasts atomically. The gateway proxies `/ws/notifications` to this service's `/ws` endpoint bidirectionally.
-- **RabbitMQ startup timing** — the consumer start is wrapped in a try/except during lifespan. If RabbitMQ isn't ready yet, the service starts without the consumer and logs an error. Restart the service once RabbitMQ is healthy to reconnect.
+- **SQS startup timing** — the consumer start is wrapped in a try/except during lifespan. If LocalStack/SQS isn't ready yet, the service starts without the consumer and logs an error. Restart the service once SQS is healthy to reconnect.

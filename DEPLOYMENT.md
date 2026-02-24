@@ -85,7 +85,8 @@ postgres → user-service, product-service, notification-service
          → order-service (waits for product-service healthy)
          → api-gateway (waits for user-service healthy)
          → frontend (waits for api-gateway healthy)
-rabbitmq, mailhog → start independently
+localstack, mailhog → start independently
+# After localstack healthy, run: ./scripts/setup-localstack.sh
 ```
 
 Wait ~30–60 seconds after `docker-compose up` for all health checks to pass before testing.

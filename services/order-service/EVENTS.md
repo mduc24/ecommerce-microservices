@@ -2,7 +2,7 @@
 
 ## Overview
 
-Order Service publishes events to RabbitMQ for async communication between microservices.
+Order Service publishes events to AWS SNS for async communication between microservices. In development, LocalStack emulates SNS+SQS locally.
 
 ## Events
 
@@ -10,23 +10,24 @@ Order Service publishes events to RabbitMQ for async communication between micro
 
 **Published when:** Order successfully created and committed to database.
 
-**Routing key:** `order.created`
+**SNS Subject / event_type:** `order.created`
 
 **Payload:**
 ```json
 {
   "event_type": "order.created",
-  "timestamp": "2026-02-15T17:28:41.878640Z",
+  "timestamp": "2026-02-24T13:46:26.414410Z",
   "data": {
-    "order_id": 6,
-    "user_id": 1,
-    "total_amount": 79.99,
+    "order_id": 20,
+    "user_id": 9,
+    "user_email": "user@example.com",
+    "total_amount": 45.5,
     "items": [
       {
-        "product_id": 2,
-        "product_name": "Wireless Keyboard",
+        "product_id": 3,
+        "product_name": "USB-C Hub",
         "quantity": 1,
-        "price": 79.99
+        "price": 45.5
       }
     ],
     "status": "pending"
@@ -36,17 +37,19 @@ Order Service publishes events to RabbitMQ for async communication between micro
 
 ### order.status.updated
 
-**Published when:** Order status changes (e.g., pending -> confirmed -> shipped -> delivered).
+**Published when:** Order status changes (e.g., pending → confirmed → shipped → delivered).
 
-**Routing key:** `order.status.updated`
+**SNS Subject / event_type:** `order.status.updated`
 
 **Payload:**
 ```json
 {
   "event_type": "order.status.updated",
-  "timestamp": "2026-02-15T17:28:44.927636Z",
+  "timestamp": "2026-02-24T13:46:44.927636Z",
   "data": {
-    "order_id": 6,
+    "order_id": 20,
+    "user_id": 9,
+    "user_email": "",
     "old_status": "pending",
     "new_status": "confirmed",
     "updated_by": "system"
@@ -56,41 +59,44 @@ Order Service publishes events to RabbitMQ for async communication between micro
 
 ## Configuration
 
-RabbitMQ settings in `app/config/settings.py`:
+AWS/LocalStack settings in `app/config/settings.py`:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `RABBITMQ_HOST` | `rabbitmq` | RabbitMQ hostname |
-| `RABBITMQ_PORT` | `5672` | AMQP port |
-| `RABBITMQ_USER` | `admin` | Username |
-| `RABBITMQ_PASS` | `admin123` | Password |
-| `RABBITMQ_EXCHANGE` | `ecommerce_events` | Exchange name |
+| `AWS_ENDPOINT_URL` | `None` | Set to `http://localstack:4566` for dev; omit for production AWS |
+| `AWS_REGION` | `us-east-1` | AWS region |
+| `AWS_ACCESS_KEY_ID` | `test` | Dev only — use IAM role in production |
+| `AWS_SECRET_ACCESS_KEY` | `test` | Dev only — use IAM role in production |
+| `SNS_TOPIC_NAME` | `order-events` | SNS topic name (ARN resolved on startup) |
 
 ## Architecture
 
-- **Exchange:** `ecommerce_events` (TOPIC, durable)
-- **Messages:** Persistent (delivery_mode=2, survives RabbitMQ restart)
-- **Connection:** `aio_pika.connect_robust()` with auto-reconnect
-- **Error Handling:** Graceful degradation (logs warning, order still succeeds)
-- **Delivery:** Round-robin across multiple consumers on the same queue
+- **Topic:** `order-events` (SNS)
+- **Subscription:** `notification-queue` (SQS) subscribed to topic
+- **Publisher:** `EventPublisher.initialize()` resolves topic ARN via idempotent `create_topic`; `publish()` sends with `Subject` = routing key and `event_type` MessageAttribute
+- **Consumer:** `notification-service` long-polls SQS, parses SNS envelope (`Body.Message`), routes by `Subject`
+- **Error Handling:** Graceful degradation — if SNS unavailable, `_topic_arn` stays `None` and publishes are silently skipped; orders still succeed
 
-## Testing
+## LocalStack Setup
 
-### Run Test Consumer
+After starting LocalStack:
 
 ```bash
-docker-compose exec order-service python -m app.events.consumer
+# Create SNS topic + SQS queue + subscription
+./scripts/setup-localstack.sh
+
+# Verify topic exists
+aws --endpoint-url=http://localhost:4566 --region=us-east-1 sns list-topics
+
+# Check SQS queue for messages
+aws --endpoint-url=http://localhost:4566 --region=us-east-1 sqs get-queue-attributes \
+  --queue-url http://sqs.us-east-1.localhost.localstack.cloud:4566/000000000000/notification-queue \
+  --attribute-names ApproximateNumberOfMessages
 ```
 
-### RabbitMQ Management UI
+## Test Scenarios Verified
 
-- URL: http://localhost:15672
-- Login: admin / admin123
-- View queues, exchanges, and messages
-
-### Test Scenarios Verified
-
-1. **Normal flow** - Events published and consumed correctly
-2. **RabbitMQ down** - Orders still created, warning logged, no crash
-3. **RabbitMQ restart** - Auto-reconnect via `connect_robust()`
-4. **Multiple consumers** - Round-robin delivery across consumers
+1. **Normal flow** — SNS publish → SQS delivery → notification-service processes → email sent → message deleted
+2. **SNS down at startup** — Orders still created, warning logged, no crash (graceful degradation)
+3. **SNS down after startup** — Individual publishes fail with error log; order creation unaffected
+4. **Consumer processing failure** — Message NOT deleted; SQS redelivers after visibility timeout

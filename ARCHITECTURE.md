@@ -80,10 +80,11 @@ graph TB
 
 | Property | Value |
 |----------|-------|
-| Exchange | `ecommerce_events` (TOPIC, durable) |
-| Queue | `notification_queue` (durable, prefetch=10) |
-| Routing keys | `order.created`, `order.status.updated` |
-| Client library | `aio-pika` (async) |
+| SNS Topic | `order-events` |
+| SQS Queue | `notification-queue` (subscribed to topic) |
+| Event types | `order.created`, `order.status.updated` |
+| Client library | `aioboto3` (async) |
+| Dev environment | LocalStack (port 4566) |
 
 **Event payload** includes: `order_id`, `user_id`, `user_email`, `status`, `items`, `total_amount`, `timestamp`.
 
@@ -95,7 +96,7 @@ graph TB
 1. Frontend connects to `ws://localhost:8080/ws/notifications` (nginx proxy)
 2. nginx forwards to API Gateway `ws://api-gateway:3000/ws/notifications`
 3. Gateway maintains a bidirectional proxy to Notification Service `ws://notification-service:8004/ws`
-4. When the notification service processes a RabbitMQ event, it calls `manager.broadcast()` to push to all connected WebSocket clients
+4. When the notification service processes a SQS event, it calls `manager.broadcast()` to push to all connected WebSocket clients
 5. Frontend receives the message and displays a toast notification
 
 **Connection management:** `ConnectionManager` singleton in `notification-service/app/websocket/manager.py` — thread-safe, handles dead connection cleanup, ping/pong keepalive.
@@ -158,23 +159,25 @@ Binding:   order.*  →  notification_queue
 
 ### Publisher (Order Service)
 
-`order-service/app/services.py` publishes events after each successful DB commit using `aio-pika`. The connection is managed via the FastAPI lifespan context — opened on startup, closed on shutdown. If RabbitMQ is unavailable, the exception is caught and logged; the order creation itself is not rolled back (graceful degradation).
+`order-service/app/events/publisher.py` publishes events to the SNS topic after each successful DB commit using `aioboto3`. On startup, `EventPublisher.initialize()` resolves the topic ARN via an idempotent `create_topic` call. If SNS is unavailable, the exception is caught and logged; the order creation itself is not rolled back (graceful degradation).
 
 ### Consumer (Notification Service)
 
-`notification-service/app/events/consumer.py` runs `OrderEventConsumer` as a background task started during lifespan. It:
+`notification-service/app/events/consumer.py` runs `OrderEventConsumer` as a background asyncio task during lifespan. It:
 
-1. Connects to RabbitMQ and binds to `notification_queue`
-2. Processes each message: sends email + broadcasts WebSocket message
-3. Saves a `Notification` record to the database (status: `sent` or `failed`, with error detail)
-4. **Always ACKs** the message — even on failure — to prevent the queue from blocking
+1. Resolves the SQS queue URL via `get_queue_url` on startup
+2. Long-polls the queue (`WaitTimeSeconds=20`, up to 10 messages per batch)
+3. Parses the SNS envelope: `Body.Message` contains the actual JSON payload
+4. Routes by `Subject` field (`order.created` / `order.status.updated`)
+5. Sends email + broadcasts WebSocket message + saves `Notification` record
+6. **Deletes the message only on success** — failures leave the message in the queue for SQS to redeliver
 
-### Always-ACK Pattern
+### Delete-on-Success Pattern
 
-The consumer never NACKs or rejects messages. Instead:
-- Failures are recorded in the `notifications` table with `status = failed` and an `error_message`
-- Failed notifications can be retried via `POST /notifications/{id}/retry`
-- This avoids infinite requeue loops for messages that will always fail (e.g., bad email address)
+The consumer only deletes a message after the full handler completes without exception:
+- Failures are automatically redelivered by SQS after the visibility timeout
+- Persistent failures (bad email address, etc.) are retried via `POST /notifications/retry/{id}`
+- This replaces the previous Always-ACK pattern used with RabbitMQ
 
 ---
 

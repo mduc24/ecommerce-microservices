@@ -1,84 +1,118 @@
 """
-RabbitMQ consumer for order events.
+SQS consumer for order events.
 """
 
+import asyncio
 import json
 import logging
 from datetime import datetime
 
-import aio_pika
+import aioboto3
 
 from app.config.settings import settings
-from app.websocket.manager import manager
 from app.database import AsyncSessionLocal
 from app.models import Notification
 from app.services.email_service import send_email
+from app.websocket.manager import manager
 
 logger = logging.getLogger(__name__)
 
 
 class OrderEventConsumer:
-    """Consumes order events from RabbitMQ and sends email notifications."""
+    """Consumes order events from AWS SQS queue via long polling."""
 
     def __init__(self):
-        self._connection = None
-        self._channel = None
+        self._session = aioboto3.Session()
+        self._queue_url: str | None = None
+        self._running = False
+
+    def _client(self):
+        """Return SQS async client context manager."""
+        kwargs = {
+            "region_name": settings.aws_region,
+            "aws_access_key_id": settings.aws_access_key_id,
+            "aws_secret_access_key": settings.aws_secret_access_key,
+        }
+        if settings.aws_endpoint_url:
+            kwargs["endpoint_url"] = settings.aws_endpoint_url
+        return self._session.client("sqs", **kwargs)
+
+    async def initialize(self):
+        """Resolve SQS queue URL from queue name."""
+        try:
+            async with self._client() as client:
+                response = await client.get_queue_url(QueueName=settings.sqs_queue_name)
+                self._queue_url = response["QueueUrl"]
+            logger.info("SQS queue initialized: %s", self._queue_url)
+        except Exception as e:
+            logger.error("Failed to initialize SQS consumer: %s", e)
+            self._queue_url = None
 
     async def start(self):
-        """Connect to RabbitMQ and start consuming order events."""
-        try:
-            self._connection = await aio_pika.connect_robust(
-                host=settings.rabbitmq_host,
-                port=settings.rabbitmq_port,
-                login=settings.rabbitmq_user,
-                password=settings.rabbitmq_pass,
-            )
-            self._channel = await self._connection.channel()
-            await self._channel.set_qos(prefetch_count=10)
+        """Initialize and run the SQS polling loop."""
+        await self.initialize()
+        if not self._queue_url:
+            logger.error("SQS queue not available. Consumer not started.")
+            return
 
-            exchange = await self._channel.declare_exchange(
-                settings.rabbitmq_exchange,
-                aio_pika.ExchangeType.TOPIC,
-                durable=True,
-            )
+        self._running = True
+        logger.info("SQS consumer polling started on: %s", self._queue_url)
 
-            queue = await self._channel.declare_queue(
-                settings.rabbitmq_queue,
-                durable=True,
-            )
-
-            await queue.bind(exchange, routing_key="order.created")
-            await queue.bind(exchange, routing_key="order.status.updated")
-
-            await queue.consume(self._on_message)
-
-            logger.info(
-                "Consumer started on queue '%s', bound to: order.created, order.status.updated",
-                settings.rabbitmq_queue,
-            )
-        except Exception as e:
-            logger.error("Failed to start consumer: %s", e)
-            self._connection = None
-            self._channel = None
-
-    async def _on_message(self, message: aio_pika.abc.AbstractIncomingMessage):
-        """Process incoming message: save notification, send email, always ACK."""
-        async with message.process():
-            routing_key = message.routing_key
+        while self._running:
             try:
-                body = json.loads(message.body.decode())
-                data = body.get("data", {})
-                logger.info("Received event: %s", routing_key)
-
-                if routing_key == "order.created":
-                    await self._handle_order_created(data)
-                elif routing_key == "order.status.updated":
-                    await self._handle_order_status_updated(data)
-                else:
-                    logger.warning("Unknown routing key: %s", routing_key)
-
+                await self._poll()
+            except asyncio.CancelledError:
+                break
             except Exception as e:
-                logger.error("Error processing event %s: %s", routing_key, e)
+                logger.error("Polling error: %s. Retrying in 5s...", e)
+                await asyncio.sleep(5)
+
+        logger.info("SQS consumer polling stopped")
+
+    async def _poll(self):
+        """Single long-poll cycle: receive up to 10 messages and process each."""
+        async with self._client() as client:
+            response = await client.receive_message(
+                QueueUrl=self._queue_url,
+                MaxNumberOfMessages=10,
+                WaitTimeSeconds=20,
+                MessageAttributeNames=["All"],
+            )
+
+        messages = response.get("Messages", [])
+        for message in messages:
+            await self._process_message(message)
+
+    async def _process_message(self, message: dict):
+        """Parse SNS envelope, route by event_type, delete only on success."""
+        receipt_handle = message["ReceiptHandle"]
+        try:
+            # SNS wraps messages: {"Type": "Notification", "Subject": "...", "Message": "{...}"}
+            envelope = json.loads(message["Body"])
+            event_type = envelope.get("Subject", "")
+            inner = json.loads(envelope["Message"])
+            data = inner.get("data", {})
+
+            logger.info("Received event: %s", event_type)
+
+            if event_type == "order.created":
+                await self._handle_order_created(data)
+            elif event_type == "order.status.updated":
+                await self._handle_order_status_updated(data)
+            else:
+                logger.warning("Unknown event type: %s — skipping", event_type)
+
+            # Delete message only after successful processing
+            async with self._client() as client:
+                await client.delete_message(
+                    QueueUrl=self._queue_url,
+                    ReceiptHandle=receipt_handle,
+                )
+            logger.info("Message deleted after processing: %s", event_type)
+
+        except Exception as e:
+            # Leave in queue — SQS will redeliver after visibility timeout
+            logger.error("Failed to process message, leaving in queue for retry: %s", e)
 
     async def _handle_order_created(self, data: dict):
         """Handle order.created event: send confirmation email."""
@@ -95,7 +129,6 @@ class OrderEventConsumer:
             "status": data.get("status", "pending"),
         }
 
-        # Save notification as pending
         async with AsyncSessionLocal() as db:
             notification = Notification(
                 type="order_confirmation",
@@ -110,7 +143,6 @@ class OrderEventConsumer:
             await db.commit()
             await db.refresh(notification)
 
-            # Send email
             result = await send_email(
                 to=user_email,
                 subject=subject,
@@ -118,7 +150,6 @@ class OrderEventConsumer:
                 context=template_context,
             )
 
-            # Update notification status
             notification.status = result["status"]
             notification.error_message = result.get("error_message")
             await db.commit()
@@ -144,9 +175,9 @@ class OrderEventConsumer:
         order_id = data["order_id"]
         old_status = data["old_status"]
         new_status = data["new_status"]
-
         user_id = data.get("user_id", 0)
         user_email = data.get("user_email", f"user_{user_id}@example.com")
+
         subject = f"Order #{order_id} Status: {new_status.title()}"
         template_context = {
             "user_email": user_email,
@@ -197,10 +228,9 @@ class OrderEventConsumer:
         )
 
     async def stop(self):
-        """Close RabbitMQ connection."""
-        if self._connection and not self._connection.is_closed:
-            await self._connection.close()
-            logger.info("Consumer connection closed")
+        """Signal the polling loop to stop."""
+        self._running = False
+        logger.info("SQS consumer stop requested")
 
 
 event_consumer = OrderEventConsumer()

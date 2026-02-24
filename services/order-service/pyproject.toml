@@ -15,7 +15,7 @@ pydantic-settings = "^2.1.0"
 alembic = "^1.13.0"
 httpx = "^0.26.0"
 python-multipart = "^0.0.6"
-aio-pika = "^9.5.8"
+aioboto3 = "^12.3.0"
 python-jose = {extras = ["cryptography"], version = "^3.5.0"}
 
 [tool.poetry.group.dev.dependencies]
