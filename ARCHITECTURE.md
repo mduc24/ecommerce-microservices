@@ -4,9 +4,9 @@
 
 This platform is built as a collection of independently deployable microservices, each owning its own data store and communicating through well-defined interfaces. The system consists of four backend services (user, product, order, notification), an API gateway, and a Vue 3 frontend — all orchestrated with Docker Compose.
 
-The API Gateway is the single entry point for all client traffic. It handles JWT validation, proxies requests to the appropriate backend service, and maintains a WebSocket tunnel to the notification service for real-time push delivery. Backend services communicate with each other either synchronously over HTTP (order → product for stock checks) or asynchronously via RabbitMQ (order publishes events, notification consumes them).
+The API Gateway is the single entry point for all client traffic. It handles JWT validation, proxies requests to the appropriate backend service, and maintains a WebSocket tunnel to the notification service for real-time push delivery. Backend services communicate with each other either synchronously over HTTP (order → product for stock checks) or asynchronously via AWS SNS+SQS (order publishes events, notification consumes them).
 
-The notification pipeline is fully decoupled from order processing. When an order is created or updated, the order service publishes an event to RabbitMQ and returns immediately. The notification service independently consumes that event, sends an HTML email via SMTP, broadcasts a WebSocket message to connected clients, and records the result in its own database — with a retry API for failed deliveries.
+The notification pipeline is fully decoupled from order processing. When an order is created or updated, the order service publishes an event to SNS and returns immediately. The notification service independently polls SQS, consumes that event, sends an HTML email via SMTP, broadcasts a WebSocket message to connected clients, and records the result in its own database — with a retry API for failed deliveries.
 
 ---
 
@@ -31,7 +31,7 @@ graph TB
 
     subgraph Infrastructure
         PG[("PostgreSQL<br/>:5432")]
-        MQ["RabbitMQ<br/>:5672"]
+        MQ["SNS + SQS<br/>LocalStack :4566"]
         MH["MailHog SMTP<br/>:1025"]
     end
 
@@ -72,11 +72,11 @@ graph TB
 
 ---
 
-### Asynchronous: RabbitMQ Events
+### Asynchronous: AWS SNS + SQS Events
 
 **Who:** Order Service (publisher) → Notification Service (consumer)
 
-**Why:** Sending emails and pushing WebSocket notifications do not need to block the order creation response. Decoupling these via a message queue means order latency is unaffected by email delivery delays, and the notification service can fail/restart independently without losing events (durable queue).
+**Why:** Sending emails and pushing WebSocket notifications do not need to block the order creation response. Decoupling these via a message queue means order latency is unaffected by email delivery delays, and the notification service can fail/restart independently without losing events (durable SQS queue).
 
 | Property | Value |
 |----------|-------|
@@ -143,12 +143,12 @@ This means historical orders always reflect the price the customer actually paid
 
 ## Event-Driven Architecture
 
-### Exchange & Queue
+### Topic & Queue
 
 ```
-Exchange:  ecommerce_events  (type: TOPIC, durable: true)
-Queue:     notification_queue (durable: true, prefetch: 10)
-Binding:   order.*  →  notification_queue
+SNS Topic:  order-events
+SQS Queue:  notification-queue (subscribed to topic)
+Routing:    Subject field = event type (order.created / order.status.updated)
 ```
 
 ### Events
@@ -177,7 +177,7 @@ Binding:   order.*  →  notification_queue
 The consumer only deletes a message after the full handler completes without exception:
 - Failures are automatically redelivered by SQS after the visibility timeout
 - Persistent failures (bad email address, etc.) are retried via `POST /notifications/retry/{id}`
-- This replaces the previous Always-ACK pattern used with RabbitMQ
+- This is the natural SQS retry pattern — messages are only removed from the queue after confirmed successful processing
 
 ---
 
@@ -193,7 +193,7 @@ sequenceDiagram
     participant OS as Order Service
     participant PS as Product Service
     participant DB as orders_db
-    participant MQ as RabbitMQ
+    participant MQ as SNS + SQS
     participant NS as Notification Service
     participant SMTP as MailHog
     participant WS as WebSocket
@@ -206,12 +206,12 @@ sequenceDiagram
     PS-->>OS: Product name, price, stock
     OS->>DB: INSERT order + order_items (price snapshot)
     DB-->>OS: Order created
-    OS->>MQ: Publish order.created event
+    OS->>MQ: Publish order.created (SNS)
     OS-->>GW: 201 Order response
     GW-->>FE: 201 Order response
     FE-->>User: "Order placed!" + navigate to Orders
 
-    MQ->>NS: Consume order.created
+    MQ->>NS: Poll SQS, consume order.created
     NS->>SMTP: Send HTML confirmation email
     NS->>DB: INSERT notification (status=sent)
     NS->>WS: broadcast({type: "notification", ...})
@@ -302,11 +302,11 @@ All four backend services are stateless — no in-memory session state. Authenti
 
 ### Message Queue for Async Workloads
 
-Email delivery and WebSocket broadcasting are offloaded to the notification service via RabbitMQ. This means:
+Email delivery and WebSocket broadcasting are offloaded to the notification service via AWS SNS+SQS. This means:
 
 - Order service response time is not coupled to email delivery latency
 - The notification service can be scaled independently based on event volume
-- The durable queue buffers events during notification service restarts
+- The SQS queue buffers events during notification service restarts
 
 ### Database per Service
 
@@ -321,7 +321,7 @@ Each service scales its database independently. A read-heavy product catalog can
 - **Inventory decrement** — order creation validates stock but does not decrement it; concurrent orders can oversell
 - **Rate limiting** — no request throttling at the gateway; APIs are open to abuse
 - **Authentication on product/notification endpoints** — product writes and notification reads are unauthenticated
-- **Distributed transactions** — no saga or 2PC pattern; a partial failure (order saved, RabbitMQ publish fails) is silently degraded
+- **Distributed transactions** — no saga or 2PC pattern; a partial failure (order saved, SNS publish fails) is silently degraded
 - **Token refresh** — JWTs expire and require re-login; no refresh token flow
 
 ### Production Additions
