@@ -5,7 +5,7 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=flat&logo=fastapi)
 ![Vue.js](https://img.shields.io/badge/vue.js-3-green.svg?logo=vuedotjs)
 ![PostgreSQL](https://img.shields.io/badge/postgresql-%23316192.svg?style=flat&logo=postgresql&logoColor=white)
-![RabbitMQ](https://img.shields.io/badge/rabbitmq-%23FF6600.svg?&style=flat&logo=rabbitmq&logoColor=white)
+![AWS](https://img.shields.io/badge/AWS_SNS%2FSQS-LocalStack-orange.svg?style=flat&logo=amazonaws&logoColor=white)
 
 A scalable e-commerce platform built with microservices architecture, featuring a Vue 3 storefront, Google OAuth authentication, real-time WebSocket notifications, and event-driven order processing.
 
@@ -14,7 +14,7 @@ A scalable e-commerce platform built with microservices architecture, featuring 
 ## Key Highlights
 
 - **Microservices architecture** — 4 independent Python/FastAPI services, each with its own PostgreSQL database, orchestrated via Docker Compose
-- **Event-driven messaging** — RabbitMQ TOPIC exchange decouples order processing from email/WebSocket notifications
+- **Event-driven messaging** — AWS SNS→SQS fan-out decouples order processing from email/WebSocket notifications (LocalStack in dev)
 - **Full-stack** — Vue 3 SPA (Tailwind CSS, Pinia, Vue Router) communicates through a single API Gateway with JWT + Google OAuth 2.0 auth
 
 ---
@@ -110,11 +110,11 @@ graph TB
 | Backend | Frontend | Infrastructure |
 |---------|----------|----------------|
 | Python 3.11 | Vue 3 (Composition API) | PostgreSQL 16 (4 databases) |
-| FastAPI | Vite + HMR | RabbitMQ 3 (TOPIC exchange) |
+| FastAPI | Vite + HMR | AWS SNS + SQS (LocalStack in dev) |
 | SQLAlchemy 2.0 (async) | Tailwind CSS v4 | Docker Compose |
 | Alembic (async migrations) | Pinia (state management) | Poetry (dependency management) |
 | Pydantic v2 | Vue Router 4 | MailHog (email testing, dev) |
-| aio-pika (RabbitMQ) | Axios (HTTP client) | Adminer (DB GUI, dev) |
+| aioboto3 (SNS/SQS) | Axios (HTTP client) | Adminer (DB GUI, dev) |
 | aiosmtplib + Jinja2 | | |
 | Authlib (Google OAuth 2.0) | | |
 | python-jose (JWT) | | |

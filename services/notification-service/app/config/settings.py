@@ -19,13 +19,12 @@ class Settings(BaseSettings):
     db_pool_pre_ping: bool = True
     db_pool_recycle: int = 3600
 
-    # RabbitMQ
-    rabbitmq_host: str = "rabbitmq"
-    rabbitmq_port: int = 5672
-    rabbitmq_user: str = "admin"
-    rabbitmq_pass: str = "admin123"
-    rabbitmq_exchange: str = "ecommerce_events"
-    rabbitmq_queue: str = "notification_queue"
+    # AWS (SQS for order events)
+    aws_region: str = "us-east-1"
+    aws_endpoint_url: str | None = None  # Set to http://localstack:4566 for dev
+    aws_access_key_id: str = "test"
+    aws_secret_access_key: str = "test"
+    sqs_queue_name: str = "notification-queue"
 
     # SMTP (MailHog)
     smtp_host: str = "mailhog"

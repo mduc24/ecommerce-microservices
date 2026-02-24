@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Database connection failed on startup: {e}")
 
-    await event_publisher.connect()
+    await event_publisher.initialize()
     app.state.event_publisher = event_publisher
 
     yield

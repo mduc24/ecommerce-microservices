@@ -23,12 +23,12 @@ class Settings(BaseSettings):
     product_service_url: str  # http://product-service:8001
     product_service_timeout: int = 5
 
-    # RabbitMQ
-    rabbitmq_host: str = "rabbitmq"
-    rabbitmq_port: int = 5672
-    rabbitmq_user: str = "admin"
-    rabbitmq_pass: str = "admin123"
-    rabbitmq_exchange: str = "ecommerce_events"
+    # AWS (SNS for order events)
+    aws_region: str = "us-east-1"
+    aws_endpoint_url: str | None = None  # Set to http://localstack:4566 for dev
+    aws_access_key_id: str = "test"
+    aws_secret_access_key: str = "test"
+    sns_topic_name: str = "order-events"
 
     # JWT (must match user-service)
     secret_key: str = "your-secret-key-change-this-in-production"

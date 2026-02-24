@@ -1,7 +1,7 @@
 """
 Notification Service - FastAPI application.
 
-Consumes order events from RabbitMQ and sends email notifications via SMTP.
+Consumes order events from AWS SQS and sends email notifications via SMTP.
 """
 
 import asyncio
@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     logger.info("Database tables ready")
 
-    # Start RabbitMQ consumer as background task
+    # Start SQS consumer as background task
     consumer_task = asyncio.create_task(event_consumer.start())
 
     yield
