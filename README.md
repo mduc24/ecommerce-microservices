@@ -36,7 +36,7 @@ graph TB
     NS --> PG
 
     OS -->|"HTTP"| PS
-    OS -->|"Publish events"| MQ["RabbitMQ<br/>:5672"]
+    OS -->|"Publish events"| MQ["SNS + SQS<br/>LocalStack :4566"]
     MQ -->|"Consume events"| NS
 
     NS --> MH["MailHog SMTP<br/>:1025"]
@@ -85,11 +85,11 @@ graph TB
 - Order creation with product validation (calls product-service)
 - Product snapshot pattern (name/price stored at order time)
 - Order status transitions (`pending → confirmed → shipped → delivered / cancelled`)
-- RabbitMQ event publishing on create and status update
+- SNS event publishing on create and status update (aioboto3)
 - `user_id` + `email` extracted from JWT Bearer token
 
 ### Notification Service
-- RabbitMQ consumer for order events
+- SQS long-polling consumer for order events (aioboto3)
 - HTML email templates (Jinja2) for order confirmation and status updates
 - Email delivery via SMTP (MailHog in dev)
 - WebSocket broadcast for real-time push notifications
@@ -97,11 +97,11 @@ graph TB
 - Database tracking (status, error messages)
 
 ### Event-Driven Architecture
-- RabbitMQ TOPIC exchange (`ecommerce_events`)
-- Routing keys: `order.created`, `order.status.updated`
-- Durable queue with prefetch=10
-- Always-ACK pattern, errors saved to DB
-- Graceful degradation (services work without RabbitMQ)
+- AWS SNS topic `order-events` → SQS queue `notification-queue` (LocalStack in dev)
+- Event types: `order.created`, `order.status.updated`
+- Long-polling consumer (`WaitTimeSeconds=20`, up to 10 messages/batch)
+- Delete-on-success pattern: failures stay in queue for automatic SQS retry
+- Graceful degradation (services work without SNS/LocalStack)
 
 ---
 
@@ -130,10 +130,10 @@ graph TB
 | **API Gateway** | 3000 | Single entry point, JWT validation, WebSocket proxy |
 | **User Service** | 8003 | JWT authentication, Google OAuth, user management |
 | **Product Service** | 8001 | Product catalog, inventory, CRUD |
-| **Order Service** | 8002 | Order processing, RabbitMQ event publisher |
+| **Order Service** | 8002 | Order processing, SNS event publisher |
 | **Notification Service** | 8004 | Email notifications, WebSocket push |
 | **PostgreSQL** | 5432 | 4 independent databases |
-| **RabbitMQ** | 5672 / 15672 | Message broker / Management UI |
+| **LocalStack** | 4566 | AWS SNS + SQS emulation (dev only) |
 | **MailHog** | 1025 / 8025 | SMTP capture / Web UI (dev only) |
 | **Adminer** | 3636 | Database GUI (dev only) |
 
@@ -188,7 +188,7 @@ docker-compose up -d
 | http://localhost:8080 | Frontend |
 | http://localhost:3000/docs | API Gateway Swagger UI |
 | http://localhost:3000/health | Aggregated health check |
-| http://localhost:15672 | RabbitMQ Management (admin / admin123) |
+| http://localhost:4566/_localstack/health | LocalStack health + service status |
 | http://localhost:8025 | MailHog — view sent emails |
 | http://localhost:3636 | Adminer DB GUI (postgres / postgres) |
 
@@ -220,7 +220,7 @@ ecommerce-microservices/
 ├── services/
 │   ├── user-service/       # JWT auth, Google OAuth, user management
 │   ├── product-service/    # Product catalog, inventory, CRUD
-│   ├── order-service/      # Order processing, RabbitMQ publisher
+│   ├── order-service/      # Order processing, SNS event publisher
 │   └── notification-service/ # Email + WebSocket notifications
 ├── scripts/
 │   └── init-databases.sql  # Creates 4 PostgreSQL databases
@@ -273,8 +273,8 @@ docker-compose exec user-service poetry run pytest
 4. Browse products, view details, add items to cart
 5. Checkout (cart → order creation) — JWT sent as Bearer token
 6. Order Service validates stock via Product Service, extracts `user_id` + `email` from JWT
-7. Order saved to DB, event published to RabbitMQ with real user email
-8. Notification Service consumes event, sends HTML email (viewable at http://localhost:8025)
+7. Order saved to DB, event published to SNS (`order-events` topic) with real user email
+8. Notification Service polls SQS, consumes event, sends HTML email (viewable at http://localhost:8025)
 9. WebSocket broadcast pushes toast notification to frontend
 10. Order appears on Orders page with status badge
 
