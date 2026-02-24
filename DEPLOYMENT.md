@@ -155,7 +155,7 @@ After step 4: check http://localhost:8025 (MailHog) to see the confirmation emai
 | **API Gateway** | http://localhost:3000 | — |
 | **Swagger UI** | http://localhost:3000/docs | — |
 | **Health Check** | http://localhost:3000/health | — |
-| **RabbitMQ UI** | http://localhost:15672 | admin / admin123 |
+| **LocalStack** | http://localhost:4566/_localstack/health | — |
 | **MailHog** | http://localhost:8025 | — |
 | **Adminer (DB GUI)** | http://localhost:3636 | System: PostgreSQL · Server: postgres · User: postgres · Pass: postgres |
 
@@ -304,21 +304,22 @@ docker-compose exec notification-service alembic upgrade head
 
 ## 4. Troubleshooting
 
-### RabbitMQ connection refused on startup
+### SQS consumer not starting
 
-**Symptom:** `notification-service` logs show `Failed to start consumer: Connection refused`
+**Symptom:** `notification-service` logs show `Failed to start consumer` or no events being processed.
 
-**Cause:** RabbitMQ takes 20–30 seconds to fully initialize. `notification-service` starts before RabbitMQ is ready.
+**Cause:** LocalStack may not be healthy yet, or `setup-localstack.sh` hasn't been run to create the SNS topic + SQS queue.
 
-**Fix:** The consumer retries automatically. Wait ~30 seconds, then check:
-
-```bash
-docker-compose logs notification-service | grep "Consumer started"
-```
-
-If it never recovers, restart the notification service:
+**Fix:**
 
 ```bash
+# 1. Verify LocalStack is healthy
+curl http://localhost:4566/_localstack/health
+
+# 2. Run setup script (creates SNS topic + SQS queue + subscription)
+./scripts/setup-localstack.sh
+
+# 3. Restart the notification service to reconnect
 docker-compose restart notification-service
 ```
 
@@ -437,7 +438,7 @@ When implemented, this section will cover:
 - **RDS (PostgreSQL)** — Managed database with multi-AZ failover
 - **ElastiCache (Redis)** — Session cache and rate limiting
 - **ALB** — Application Load Balancer replacing the API Gateway container
-- **Amazon MQ (RabbitMQ)** — Managed message broker
+- **Amazon SNS + SQS** — Managed messaging (replaces LocalStack in production)
 - **Secrets Manager** — Replacing `.env` files for secrets
 - **CloudWatch** — Centralized logging and metrics
 - **GitHub Actions** — CI/CD pipeline: lint → test → build → push to ECR → deploy to ECS

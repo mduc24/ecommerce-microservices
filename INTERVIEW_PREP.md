@@ -8,7 +8,7 @@
 
 "I built a full-stack e-commerce platform using a microservices architecture. The backend is four independent Python/FastAPI services — users, products, orders, and notifications — each with its own PostgreSQL database, communicating through an API gateway.
 
-The interesting part is the order processing pipeline: when a customer places an order, the order service validates stock by calling the product service synchronously, saves the order, then publishes an event to RabbitMQ. The notification service consumes that event independently, sends an HTML email, and broadcasts a WebSocket push to the frontend — so the user sees a real-time toast notification without the order flow blocking on email delivery.
+The interesting part is the order processing pipeline: when a customer places an order, the order service validates stock by calling the product service synchronously, saves the order, then publishes an event to AWS SNS. The notification service polls SQS and consumes that event independently, sends an HTML email, and broadcasts a WebSocket push to the frontend — so the user sees a real-time toast notification without the order flow blocking on email delivery.
 
 The frontend is Vue 3 with Pinia and Tailwind, Dockerized with nginx. Auth is JWT with Google OAuth 2.0. Everything runs with a single `docker-compose up`.
 
@@ -22,7 +22,7 @@ I built this to get hands-on experience with the patterns that appear in real di
 - http://localhost:8080 (Frontend)
 - http://localhost:3000/health (Health check)
 - http://localhost:8025 (MailHog)
-- http://localhost:15672 (RabbitMQ UI — admin/admin123)
+- http://localhost:4566/_localstack/health (LocalStack — SNS+SQS status)
 - http://localhost:3000/docs (Swagger)
 
 ---
@@ -62,13 +62,13 @@ Or show Google OAuth:
 **Step 5 — Place an order (2 min) — THE KEY DEMO**
 
 Add to cart → checkout.
-> "Watch what happens: the order service calls the product service synchronously to validate stock, takes a price snapshot so the order history is immutable, saves to the database, then publishes an `order.created` event to RabbitMQ."
+> "Watch what happens: the order service calls the product service synchronously to validate stock, takes a price snapshot so the order history is immutable, saves to the database, then publishes an `order.created` event to SNS."
 
 Switch to MailHog (http://localhost:8025):
-> "Within a second or two, the notification service has consumed the event and sent this HTML email. That's the async decoupling — the order API returned immediately, email happened independently."
+> "Within a second or two, the notification service has polled SQS, consumed the event, and sent this HTML email. That's the async decoupling — the order API returned immediately, email happened independently."
 
-Switch to RabbitMQ UI (http://localhost:15672 → Queues → notification_queue):
-> "You can see the message count here. The exchange is TOPIC type — if I added an analytics or inventory service tomorrow, I'd just bind a new queue with `order.*` without touching the order service."
+Switch to LocalStack health (http://localhost:4566/_localstack/health):
+> "LocalStack emulates SNS+SQS locally. The SNS topic fans out to the SQS queue — if I added an analytics or inventory service tomorrow, I'd just subscribe a new SQS queue to the same SNS topic without touching the order service."
 
 Show the toast notification on the frontend:
 > "And simultaneously, a WebSocket broadcast hits all connected clients. The gateway proxies the WebSocket bidirectionally — frontend connects once and gets all notifications in real time."
@@ -87,7 +87,7 @@ Open http://localhost:3000/docs:
 > "FastAPI generates this automatically from Pydantic schemas. Useful for showing the full API surface."
 
 Optionally show `services/order-service/app/services.py`:
-> "Here's the `create_order` function — product validation loop, snapshot building, single DB transaction, then event publish. The event publish is wrapped in a try/except — if RabbitMQ is down, the order still succeeds. Graceful degradation."
+> "Here's the `create_order` function — product validation loop, snapshot building, single DB transaction, then event publish. The event publish is wrapped in a try/except — if SNS is down, the order still succeeds. Graceful degradation."
 
 ---
 
@@ -111,7 +111,7 @@ The trade-off is real: what would be a function call in a monolith is a network 
 
 "Two patterns. Synchronously: the order service calls the product service over HTTP using `httpx` to validate products before creating an order. It's blocking because you need an immediate, consistent answer — you can't create an order if the product doesn't exist.
 
-Asynchronously: the order service publishes events to RabbitMQ, and the notification service consumes them. That's for anything that doesn't need to block the response — email and WebSocket notifications. I used a TOPIC exchange with routing keys `order.created` and `order.status.updated`, so it's easy to add new consumers without touching the publisher."
+Asynchronously: the order service publishes events to AWS SNS, and the notification service polls SQS to consume them. That's for anything that doesn't need to block the response — email and WebSocket notifications. The SNS topic fans out to SQS queues, so it's easy to add new consumers without touching the publisher."
 
 ---
 
@@ -123,11 +123,11 @@ The API Gateway validates the JWT for protected routes — it's the single secur
 
 ---
 
-### 4. What happens when RabbitMQ is down?
+### 4. What happens when SNS is down?
 
-"Two things. First, the order service catches publish failures and logs them — the order creation itself doesn't roll back. Orders succeed even without RabbitMQ. Second, once RabbitMQ comes back up, no events are retroactively replayed — anything published during the outage is lost.
+"Two things. First, the order service catches publish failures and logs them — the order creation itself doesn't roll back. Orders succeed even without SNS. Second, once SNS comes back up, no events are retroactively replayed — anything published during the outage is lost.
 
-In production I'd implement the transactional outbox pattern: write the event to the order's own database in the same transaction as the order, then have a separate process reliably publish it. That closes the gap where the order saves but the publish fails."
+In production I'd implement the transactional outbox pattern: write the event to the order's own database in the same transaction as the order, then have a separate process reliably publish it to SNS. That closes the gap where the order saves but the publish fails."
 
 ---
 
@@ -135,7 +135,7 @@ In production I'd implement the transactional outbox pattern: write the event to
 
 "Each service is stateless, so horizontal scaling is straightforward — run multiple replicas behind a load balancer. The API Gateway is currently the only external entry point, so in production you'd put an ALB in front of multiple gateway instances.
 
-For the database, each service has its own PostgreSQL — you can scale them independently. A read-heavy product catalog could add read replicas without touching the order database. The notification service is CPU-light but I/O-heavy, so scaling it horizontally and increasing RabbitMQ prefetch count handles higher event volume.
+For the database, each service has its own PostgreSQL — you can scale them independently. A read-heavy product catalog could add read replicas without touching the order database. The notification service is CPU-light but I/O-heavy, so scaling it horizontally handles higher event volume — SQS distributes messages across multiple consumers automatically.
 
 Redis would help for product catalog caching — most product reads are identical and don't need a DB round-trip."
 
@@ -161,7 +161,7 @@ The auth middleware being commented out for product writes is a shortcut I'd clo
 
 ### 8. How does the WebSocket work?
 
-"The notification service has a `ConnectionManager` singleton that tracks all active WebSocket connections. When the RabbitMQ consumer processes an event — order created or status updated — it calls `manager.broadcast()` which sends a JSON message to every connected client.
+"The notification service has a `ConnectionManager` singleton that tracks all active WebSocket connections. When the SQS consumer processes an event — order created or status updated — it calls `manager.broadcast()` which sends a JSON message to every connected client.
 
 The API Gateway proxies the WebSocket at `/ws/notifications` to the notification service's `/ws` endpoint. The client connects once and receives all broadcasts. There's a ping/pong keepalive — the client sends `{type: "ping"}` every 30 seconds, server responds with `{type: "pong"}` to prevent idle disconnects."
 
@@ -188,7 +188,7 @@ Google redirects back to `/auth/google/callback?code=...&state=...`. The gateway
 ### Strengths
 
 - **End-to-end working system.** The whole flow — register, browse, order, email, WebSocket notification — works. Not a tutorial scaffold.
-- **Real distributed systems patterns.** Event-driven messaging, async/await throughout, product snapshot pattern, always-ACK consumer, WebSocket proxy — these are production patterns, not toy implementations.
+- **Real distributed systems patterns.** Event-driven messaging, async/await throughout, product snapshot pattern, delete-on-success SQS consumer, WebSocket proxy — these are production patterns, not toy implementations.
 - **Documented trade-offs.** I've documented what I cut, why, and what the production version would look like. That's more valuable than pretending every decision was optimal.
 - **Accurate documentation.** The API docs were written from the actual code, not from memory — including catching a mismatch in the retry endpoint path.
 
@@ -211,4 +211,4 @@ pytest-asyncio for service business logic, mocked `ProductClient` for order serv
 Add a `version` column to products. Order creation calls a `reserve_stock` endpoint on the product service that atomically decrements stock using `WHERE version = :expected_version`. If the version has changed (concurrent order), retry or fail with 409. This closes the overselling problem properly.
 
 **3. Outbox pattern for reliable event publishing**
-Write order events to an `outbox` table in the same transaction as the order. A separate background process reads unpublished rows and publishes them to RabbitMQ, then marks them published. This guarantees events are never lost even if RabbitMQ is down at publish time — the order and the event are committed atomically.
+Write order events to an `outbox` table in the same transaction as the order. A separate background process reads unpublished rows and publishes them to SNS, then marks them published. This guarantees events are never lost even if SNS is down at publish time — the order and the event are committed atomically.

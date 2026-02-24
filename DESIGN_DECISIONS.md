@@ -14,7 +14,7 @@ I split the backend into four independent services (user, product, order, notifi
 
 **Independent deployability.** Each service can be rebuilt, restarted, and scaled without touching the others. In practice during development, this meant I could iterate on the notification service without risking the order or product logic.
 
-**Failure isolation.** When the notification service crashes, orders still process successfully. The RabbitMQ queue buffers events until it recovers. With a monolith, a bug in email sending could take down the entire application.
+**Failure isolation.** When the notification service crashes, orders still process successfully. The SQS queue buffers events until it recovers. With a monolith, a bug in email sending could take down the entire application.
 
 **Learning value.** Building inter-service communication, a message queue, and a WebSocket proxy forced me to solve problems (distributed state, network failures, service discovery) that don't exist in monolithic apps. These are the patterns that appear in real production systems.
 
@@ -36,7 +36,7 @@ At this scale — a demo project with four domains — a well-structured monolit
 
 ### The choice
 
-When an order is created, the order service publishes an event to RabbitMQ. The notification service independently consumes it and sends the email + WebSocket push.
+When an order is created, the order service publishes an event to AWS SNS. The notification service independently polls SQS and consumes it, then sends the email + WebSocket push.
 
 ### Alternatives I considered
 
@@ -44,13 +44,13 @@ When an order is created, the order service publishes an event to RabbitMQ. The 
 
 **Webhooks:** Notification service would need to register itself with the order service. Adds service discovery complexity and still doesn't solve the "what happens when notification is down" problem.
 
-**Redis Pub/Sub:** Simpler than RabbitMQ but not durable — if no subscriber is listening when the event is published, the message is lost. For email notifications, I need guaranteed delivery.
+**Redis Pub/Sub:** Simpler but not durable — if no subscriber is listening when the event is published, the message is lost. For email notifications, I need guaranteed delivery.
 
-**Kafka:** More reliable and scalable than RabbitMQ, but heavily over-engineered for this use case. Kafka excels at high-throughput event streaming with replay capability. For a handful of order events per second, RabbitMQ's TOPIC exchange with a durable queue is the right fit.
+**Kafka:** More reliable and scalable, but heavily over-engineered for this use case. Kafka excels at high-throughput event streaming with replay capability. For a handful of order events per second, SNS+SQS with a durable queue is the right fit.
 
-### Why RabbitMQ
+### Why AWS SNS + SQS
 
-Durable queues mean events survive notification service restarts. The message isn't lost — it waits in the queue until consumed. The TOPIC exchange with routing keys (`order.created`, `order.status.updated`) is clean and extensible — I could add more consumers later (analytics, inventory, SMS) without changing the order service.
+SQS provides a durable queue — events survive notification service restarts and are redelivered automatically after the visibility timeout if processing fails. The SNS fan-out model with routing via the `Subject` field (`order.created`, `order.status.updated`) is clean and extensible — I could add more SQS subscribers later (analytics, inventory, SMS) without changing the order service. In development, LocalStack emulates the full SNS+SQS API locally, and production simply removes the `AWS_ENDPOINT_URL` override to use real AWS.
 
 ### Trade-off: eventual consistency
 
@@ -80,7 +80,7 @@ Four PostgreSQL databases, one per service. No service queries another service's
 
 ### In production I would...
 
-Implement the **transactional outbox pattern** — the order service writes the event to its own database in the same transaction as the order, and a separate process reliably publishes it to RabbitMQ. This eliminates the "order saved, event lost" failure mode.
+Implement the **transactional outbox pattern** — the order service writes the event to its own database in the same transaction as the order, and a separate process reliably publishes it to SNS. This eliminates the "order saved, event lost" failure mode.
 
 ---
 
@@ -112,7 +112,7 @@ If a product name has a typo that's later corrected, the old order items will fo
 
 ### Python + FastAPI
 
-I chose Python with FastAPI over Node.js/Express or Go. FastAPI gives me async/await support out of the box, automatic OpenAPI docs generation (useful for demonstrating the API during interviews), and Pydantic v2 for strong type validation. The `async def` + `await` pattern maps cleanly onto database calls, HTTP client calls, and RabbitMQ consumers — all the I/O-heavy work these services do.
+I chose Python with FastAPI over Node.js/Express or Go. FastAPI gives me async/await support out of the box, automatic OpenAPI docs generation (useful for demonstrating the API during interviews), and Pydantic v2 for strong type validation. The `async def` + `await` pattern maps cleanly onto database calls, HTTP client calls, and SQS consumers — all the I/O-heavy work these services do.
 
 SQLAlchemy 2.0's async API took some getting used to (the `execute(select(...))` pattern instead of the old `query()` style) but it's the right long-term direction for the ecosystem.
 
@@ -128,7 +128,7 @@ Personal preference and curiosity. Vue's Composition API with `<script setup>` i
 
 Docker Compose is the right tool for a local development demo. It handles service networking, health checks, dependency ordering, and volume management with minimal configuration. Kubernetes would give me production-grade orchestration (rolling deployments, auto-scaling, self-healing) but at the cost of significant complexity — Helm charts, ingress controllers, persistent volume claims, RBAC — that adds no value for a demo running on a laptop.
 
-The Terraform directory exists as a placeholder for when this moves toward a production AWS deployment (ECS/Fargate, RDS, Amazon MQ).
+The Terraform directory exists as a placeholder for when this moves toward a production AWS deployment (ECS/Fargate, RDS, real SNS+SQS).
 
 ---
 
