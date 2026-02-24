@@ -81,4 +81,8 @@ export function getOrder(id) {
   return api.get(`/orders/${id}`)
 }
 
+export function updateOrderStatus(id, status) {
+  return api.patch(`/orders/${id}/status`, { status })
+}
+
 export default api

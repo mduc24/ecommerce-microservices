@@ -63,6 +63,32 @@
             <span class="text-xl font-bold text-gray-900">${{ formatPrice(order.total_amount) }}</span>
           </div>
 
+          <!-- Status Update -->
+          <div class="mt-3 flex items-center gap-2">
+            <select
+              v-model="selectedStatus[order.id]"
+              :disabled="isTerminal(order.status) || updatingOrder === order.id"
+              class="text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <option v-for="s in ALL_STATUSES" :key="s" :value="s" class="capitalize">
+                {{ s }}
+              </option>
+            </select>
+
+            <button
+              @click="updateStatus(order)"
+              :disabled="isTerminal(order.status) || updatingOrder === order.id || selectedStatus[order.id] === order.status"
+              class="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <span v-if="updatingOrder === order.id" class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+              {{ updatingOrder === order.id ? 'Updating…' : 'Update Status' }}
+            </button>
+
+            <span v-if="isTerminal(order.status)" class="text-xs text-gray-400 italic">
+              Order is {{ order.status }}
+            </span>
+          </div>
+
           <!-- Toggle Details -->
           <button
             @click="toggleDetails(order.id)"
@@ -95,7 +121,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { getOrders } from '../services/api'
+import { getOrders, updateOrderStatus } from '../services/api'
 import { useNotifications } from '../composables/useNotifications'
 
 const { addNotification } = useNotifications()
@@ -104,6 +130,10 @@ const orders = ref([])
 const loading = ref(true)
 const error = ref(null)
 const expandedOrders = ref(new Set())
+const updatingOrder = ref(null)
+const selectedStatus = ref({})
+
+const ALL_STATUSES = ['pending', 'confirmed', 'shipped', 'delivered', 'cancelled']
 
 const statusColors = {
   pending: 'bg-yellow-100 text-yellow-800',
@@ -113,12 +143,20 @@ const statusColors = {
   cancelled: 'bg-red-100 text-red-800',
 }
 
+function isTerminal(status) {
+  return status === 'delivered' || status === 'cancelled'
+}
+
 async function fetchOrders() {
   loading.value = true
   error.value = null
   try {
     const { data } = await getOrders()
     orders.value = data.orders || data
+    // Seed selectedStatus to each order's current status
+    orders.value.forEach((o) => {
+      selectedStatus.value[o.id] = o.status
+    })
   } catch (err) {
     error.value = err.message || 'Failed to load orders'
     addNotification({ type: 'error', title: 'Error', message: error.value })
@@ -128,6 +166,39 @@ async function fetchOrders() {
 }
 
 onMounted(fetchOrders)
+
+async function updateStatus(order) {
+  const newStatus = selectedStatus.value[order.id]
+  if (!newStatus || newStatus === order.status) return
+
+  const confirmed = window.confirm(
+    `Update Order #${order.id} from "${order.status}" to "${newStatus}"?`
+  )
+  if (!confirmed) {
+    selectedStatus.value[order.id] = order.status
+    return
+  }
+
+  updatingOrder.value = order.id
+  try {
+    await updateOrderStatus(order.id, newStatus)
+    addNotification({
+      type: 'success',
+      title: 'Status Updated',
+      message: `Order #${order.id} status updated to ${newStatus}`,
+    })
+    await fetchOrders()
+  } catch (err) {
+    addNotification({
+      type: 'error',
+      title: 'Update Failed',
+      message: err.message || 'Failed to update order status',
+    })
+    selectedStatus.value[order.id] = order.status
+  } finally {
+    updatingOrder.value = null
+  }
+}
 
 function toggleDetails(orderId) {
   if (expandedOrders.value.has(orderId)) {
